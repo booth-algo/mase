@@ -42,6 +42,9 @@ def _graph_iterator_dwn_by_type(graph, pass_args: dict):
     """
     Standalone graph iterator that converts nn.Linear nodes to LUTLayer.
     Does NOT use create_new_module() or quantized_module_map.
+
+    lut_n in config may be an int (uniform across all layers) or a list
+    (per-layer fan-in, indexed in the order Linear nodes are encountered).
     """
     # Lazy import to avoid circular imports
     from chop.nn.dwn import LUTLayer
@@ -53,6 +56,10 @@ def _graph_iterator_dwn_by_type(graph, pass_args: dict):
         logger.warning("DWN transform pass: no 'dwn' config found, skipping all nodes")
         return graph
 
+    lut_n_cfg = node_config.get("lut_n", 6)
+    lut_n_list = lut_n_cfg if isinstance(lut_n_cfg, list) else None
+    linear_counter = 0
+
     for node in graph.fx_graph.nodes:
         if node.op != "call_module":
             continue
@@ -63,11 +70,12 @@ def _graph_iterator_dwn_by_type(graph, pass_args: dict):
             continue
 
         in_features = actual_module.in_features
+        n_for_layer = lut_n_list[linear_counter] if lut_n_list is not None else lut_n_cfg
 
         new_module = LUTLayer(
             input_size=in_features,
             output_size=node_config.get("hidden_size", 2000),
-            n=node_config.get("lut_n", 6),
+            n=n_for_layer,
             mapping=node_config.get("mapping_first", "learnable"),
             ste=node_config.get("ste", True),
             clamp_luts=node_config.get("clamp_luts", True),
@@ -75,8 +83,9 @@ def _graph_iterator_dwn_by_type(graph, pass_args: dict):
 
         _set_node_module(graph, node, new_module)
         logger.info(
-            f"DWN: Replaced {node.target} ({in_features} -> {node_config.get('hidden_size', 2000)})"
+            f"DWN: Replaced {node.target} ({in_features} -> {node_config.get('hidden_size', 2000)}, lut_n={n_for_layer})"
         )
+        linear_counter += 1
 
     return graph
 

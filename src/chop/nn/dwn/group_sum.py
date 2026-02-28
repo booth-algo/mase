@@ -6,7 +6,6 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class GroupSum(nn.Module):
@@ -31,14 +30,10 @@ class GroupSum(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: Binary input (B, W). Padded to multiple of k if needed.
+            x: Binary input (B, W). W must be a multiple of k by model construction.
         Returns:
             Logits (B, k).
         """
-        # Pad to multiple of k (matches reference pad_if_needed)
-        remainder = x.shape[-1] % self.k
-        if remainder != 0:
-            x = F.pad(x, (0, self.k - remainder))
-
-        x = x.view(*x.shape[:-1], self.k, x.shape[-1] // self.k)
-        return x.sum(dim=-1) / self.tau
+        # Reshape (B, W) → (B, k, W//k) and sum the last dim.
+        # Uses -1 for the last dim to avoid Proxy arithmetic in view args.
+        return x.view(x.shape[0], self.k, -1).sum(dim=-1) / self.tau

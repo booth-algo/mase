@@ -38,7 +38,8 @@ def parse_args():
     parser.add_argument("--epochs",        type=int,   default=30)
     parser.add_argument("--hidden-sizes",  type=int,   nargs="+", default=[2000, 1000],
                         help="LUT layer output widths (one per layer), e.g. --hidden-sizes 2000 1000")
-    parser.add_argument("--lut-n",         type=int,   default=6, choices=[2, 4, 6])
+    parser.add_argument("--lut-n",         type=str,   default="6",
+                        help="LUT fan-in: single int (e.g. 6) or comma-separated per-layer list (e.g. 6,4,2)")
     parser.add_argument("--num-bits",      type=int,   default=3,
                         help="Thermometer bits per feature (paper uses 3)")
     parser.add_argument("--tau",           type=float, default=1.0/0.3,
@@ -62,7 +63,9 @@ def parse_args():
     parser.add_argument("--eval",          action="store_true",
                         help="Load best checkpoint and evaluate, skip training")
     parser.add_argument("--ckpt",          type=str,   default=None,
-                        help="Checkpoint path for --eval")
+                        help="Checkpoint path for --eval (overrides --ckpt-name)")
+    parser.add_argument("--ckpt-name",     type=str,   default="best",
+                        help="Checkpoint filename stem (saved as <name>.pt in mase_output/dwn/)")
     return parser.parse_args()
 
 
@@ -102,7 +105,7 @@ def _ckpt_dir():
 
 
 def eval_checkpoint(args, device):
-    ckpt_path = args.ckpt or os.path.join(_ckpt_dir(), "best.pt")
+    ckpt_path = args.ckpt or os.path.join(_ckpt_dir(), f"{args.ckpt_name}.pt")
     if not os.path.exists(ckpt_path):
         print(f"Checkpoint not found: {ckpt_path}")
         return 1
@@ -142,9 +145,18 @@ def eval_checkpoint(args, device):
     return 0
 
 
+def _parse_lut_n(lut_n_str: str):
+    """Parse --lut-n argument: '6' -> 6, '6,4,2' -> [6, 4, 2]."""
+    parts = [int(x.strip()) for x in lut_n_str.split(",")]
+    return parts[0] if len(parts) == 1 else parts
+
+
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
+
+    # Resolve lut_n: int or list[int]
+    args.lut_n = _parse_lut_n(args.lut_n)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
@@ -187,7 +199,7 @@ def main():
 
     ckpt_dir = _ckpt_dir()
     os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_path = os.path.join(ckpt_dir, "best.pt")
+    ckpt_path = os.path.join(ckpt_dir, f"{args.ckpt_name}.pt")
 
     best_acc = 0.0
     epochs_no_improve = 0

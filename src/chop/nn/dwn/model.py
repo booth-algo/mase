@@ -42,7 +42,7 @@ class DWNModel(nn.Module):
         hidden_sizes=None,
         hidden_size: int = 2000,
         num_layers: int = 2,
-        lut_n: int = 6,
+        lut_n=6,
         mapping_first: str = "learnable",
         mapping_rest: str = "random",
         tau: float = 1.0 / 0.3,
@@ -53,13 +53,23 @@ class DWNModel(nn.Module):
         self.input_features = input_features
         self.num_classes = num_classes
         self.num_bits = num_bits
-        self.lut_n = lut_n
         self.lambda_reg = lambda_reg
 
         # Resolve layer widths
         if hidden_sizes is None:
             hidden_sizes = [hidden_size] * num_layers
         self.hidden_sizes = list(hidden_sizes)
+
+        # Resolve lut_n to a per-layer list (int → same for all layers)
+        if isinstance(lut_n, int):
+            lut_ns = [lut_n] * len(self.hidden_sizes)
+        else:
+            lut_ns = list(lut_n)
+            assert len(lut_ns) == len(self.hidden_sizes), (
+                f"lut_n list length ({len(lut_ns)}) must match number of layers "
+                f"({len(self.hidden_sizes)})"
+            )
+        self.lut_n = lut_ns  # store as list
 
         # Thermometer encoder
         self.thermometer = DistributiveThermometer(num_bits=num_bits, feature_wise=True)
@@ -70,7 +80,7 @@ class DWNModel(nn.Module):
         in_sz = thermo_out
         for i, out_sz in enumerate(self.hidden_sizes):
             mp = mapping_first if i == 0 else mapping_rest
-            lut_layers.append(LUTLayer(input_size=in_sz, output_size=out_sz, n=lut_n, mapping=mp))
+            lut_layers.append(LUTLayer(input_size=in_sz, output_size=out_sz, n=lut_ns[i], mapping=mp))
             in_sz = out_sz
         self.lut_layers = nn.ModuleList(lut_layers)
 

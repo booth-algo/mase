@@ -142,6 +142,15 @@ class VerilogInterfaceEmitter:
         # a system.
         i = 0
         for node in nodes_in:
+            # DWN: binary packed vector input
+            if node.meta["mase"]["hardware"].get("module") in [
+                "fixed_dwn_lut_layer", "fixed_dwn_flatten",
+            ]:
+                node_name = vf(node.name)
+                interface += f"\n\tinput [{node_name}_INPUT_SIZE-1:0] data_in_0,"
+                interface += f"\n\tinput  data_in_0_valid,"
+                interface += f"\n\toutput data_in_0_ready,"
+                continue
             # DiffLogic: input node is expecting binary array
             if "difflogic" in node.meta["mase"]["hardware"]["module"]:
                 node_name = vf(node.name)
@@ -170,6 +179,19 @@ class VerilogInterfaceEmitter:
 
         i = 0
         for node in nodes_out:
+            # DWN: binary packed vector or groupsum output
+            if node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_lut_layer"]:
+                node_name = vf(node.name)
+                interface += f"\n\toutput [{node_name}_OUTPUT_SIZE-1:0] data_out_0,"
+                interface += f"\n\toutput  data_out_0_valid,"
+                interface += f"\n\tinput data_out_0_ready,"
+                continue
+            elif node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_groupsum"]:
+                node_name = vf(node.name)
+                interface += f"\n\toutput [$clog2({node_name}_INPUT_SIZE/{node_name}_NUM_GROUPS):0] data_out_0 [0:{node_name}_NUM_GROUPS-1],"
+                interface += f"\n\toutput  data_out_0_valid,"
+                interface += f"\n\tinput data_out_0_ready,"
+                continue
             # DiffLogic: output node is expecting binary array
             if "difflogic" in node.meta["mase"]["hardware"]["module"]:
                 node_name = vf(node.name)
@@ -232,6 +254,23 @@ class VerilogSignalEmitter:
                 signals += f"\nlogic {node_name}_{arg}_valid;"
                 signals += f"\nlogic {node_name}_{arg}_ready;"
                 continue
+            elif node.meta["mase"]["hardware"].get("module") in [
+                "fixed_dwn_lut_layer",
+            ]:
+                signals += f"\nlogic [{node_name}_INPUT_SIZE-1:0] {node_name}_{arg};"
+                signals += f"\nlogic {node_name}_{arg}_valid;"
+                signals += f"\nlogic {node_name}_{arg}_ready;"
+                continue
+            elif node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_groupsum"]:
+                signals += f"\nlogic [{node_name}_INPUT_SIZE-1:0] {node_name}_{arg};"
+                signals += f"\nlogic {node_name}_{arg}_valid;"
+                signals += f"\nlogic {node_name}_{arg}_ready;"
+                continue
+            elif node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_flatten"]:
+                signals += f"\nlogic [{node_name}_IN_COLS-1:0] {node_name}_{arg} [0:{node_name}_IN_ROWS-1];"
+                signals += f"\nlogic {node_name}_{arg}_valid;"
+                signals += f"\nlogic {node_name}_{arg}_ready;"
+                continue
 
             # Skip off-chip parameters as they will be directly connected to the top level
             if (
@@ -280,6 +319,21 @@ logic                             {node_name}_{arg}_ready;"""
                 "fixed_difflogic_flatten"
             ]:
                 signals += f"\nlogic [({_cap(node_name)}_{_cap(result)}_TENSOR_SIZE_DIM_0-1):0] {node_name}_{result};"
+                signals += f"\nlogic {node_name}_{result}_valid;"
+                signals += f"\nlogic {node_name}_{result}_ready;"
+                continue
+            elif node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_lut_layer"]:
+                signals += f"\nlogic [{node_name}_OUTPUT_SIZE-1:0] {node_name}_{result};"
+                signals += f"\nlogic {node_name}_{result}_valid;"
+                signals += f"\nlogic {node_name}_{result}_ready;"
+                continue
+            elif node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_flatten"]:
+                signals += f"\nlogic [{node_name}_IN_COLS*{node_name}_IN_ROWS-1:0] {node_name}_{result};"
+                signals += f"\nlogic {node_name}_{result}_valid;"
+                signals += f"\nlogic {node_name}_{result}_ready;"
+                continue
+            elif node.meta["mase"]["hardware"].get("module") in ["fixed_dwn_groupsum"]:
+                signals += f"\nlogic [$clog2({node_name}_INPUT_SIZE/{node_name}_NUM_GROUPS):0] {node_name}_{result} [0:{node_name}_NUM_GROUPS-1];"
                 signals += f"\nlogic {node_name}_{result}_valid;"
                 signals += f"\nlogic {node_name}_{result}_ready;"
                 continue

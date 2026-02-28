@@ -90,12 +90,9 @@ class DistributiveThermometer(nn.Module):
         if self.thresholds is None:
             raise RuntimeError("Must call fit() before binarize()/forward().")
 
-        *batch_dims, F = x.shape
-        T = self.num_bits
-
         # x unsqueeze(-1): (*, F, 1)  thresholds: (F, T) or (T,)
         out = (x.unsqueeze(-1) > self.thresholds).float()  # (*, F, T)
-        return out.reshape(*batch_dims, F * T)
+        return out.flatten(-2)  # (*, F*T) — avoids starred unpacking of x.shape
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.binarize(x)

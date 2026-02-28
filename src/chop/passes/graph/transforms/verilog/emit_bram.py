@@ -515,8 +515,13 @@ def emit_bram_transform_pass(graph, pass_args={}):
         if node.meta["mase"].parameters["hardware"]["is_implicit"]:
             continue
 
-        # DiffLogic: do not emit BRAM for any difflogic modules
-        if node.meta["mase"]["hardware"].get("module") in ["fixed_difflogic_logic"]:
+        # DiffLogic/DWN: do not emit BRAM for binary network modules
+        if node.meta["mase"]["hardware"].get("module") in [
+            "fixed_difflogic_logic",
+            "fixed_dwn_lut_layer",
+            "fixed_dwn_groupsum",
+            "fixed_dwn_flatten",
+        ]:
             continue
 
         # Only modules have internal parameters
