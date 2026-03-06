@@ -249,7 +249,9 @@ def eval_checkpoint(args, device):
               f"mapping_first={cfg['mapping_first']}, num_bits={cfg['num_bits']}")
 
     X_train, _, X_test, y_test, _, _ = load_data(args)
-    model = DWNModel(**cfg)
+    _DWN_VALID_KEYS = {"input_features", "num_classes", "num_bits", "hidden_sizes", "lut_n", "mapping_first", "mapping_rest", "tau", "lambda_reg"}
+    cfg_filtered = {k: v for k, v in cfg.items() if k in _DWN_VALID_KEYS}
+    model = DWNModel(**cfg_filtered)
     model.fit_thermometer(X_train, verbose=True)
     model.load_state_dict(ckpt["model_state_dict"])
     model = model.to(device)
@@ -293,6 +295,14 @@ def main():
     print(f"  area_lambda={args.area_lambda}")
 
     X_train, y_train, X_test, y_test, input_features, num_classes = load_data(args)
+
+    # Validate that last hidden size is divisible by num_classes for GroupSum
+    if args.hidden_sizes[-1] % num_classes != 0:
+        closest_multiple = round(args.hidden_sizes[-1] / num_classes) * num_classes
+        raise ValueError(
+            f"Last hidden size ({args.hidden_sizes[-1]}) must be divisible by num_classes "
+            f"({num_classes}) for GroupSum. Try --hidden-sizes ... {closest_multiple}"
+        )
 
     model = DWNModel(
         input_features=input_features,

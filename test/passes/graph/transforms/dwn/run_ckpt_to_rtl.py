@@ -127,6 +127,7 @@ def main():
           f"num_bits={cfg['num_bits']}, mapping_first={cfg.get('mapping_first', 'learnable')}")
 
     # --- reconstruct model (handle missing keys in older checkpoints) ---
+    _DWN_VALID_KEYS = {"input_features", "num_classes", "num_bits", "hidden_sizes", "lut_n", "mapping_first", "mapping_rest", "tau", "lambda_reg"}
     model_kwargs = {
         "input_features":  cfg["input_features"],
         "num_classes":     cfg["num_classes"],
@@ -137,13 +138,9 @@ def main():
         "mapping_rest":    cfg.get("mapping_rest",  "random"),
         "tau":             cfg.get("tau",            3.333),
         "lambda_reg":      cfg.get("lambda_reg",     0.0),
-        # area_lambda may be absent in older checkpoints
-        # DWNModel may or may not accept this kwarg; omit if absent
     }
-    # Only pass area_lambda if the checkpoint stored it (newer checkpoints)
-    area_lambda = cfg.get("area_lambda", None)
-    if area_lambda is not None:
-        model_kwargs["area_lambda"] = area_lambda
+    # Filter to only valid DWNModel keys (area_lambda is not supported)
+    model_kwargs = {k: v for k, v in model_kwargs.items() if k in _DWN_VALID_KEYS}
 
     model = DWNModel(**model_kwargs)
 
