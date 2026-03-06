@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 from numpy import ndarray
 from torch import Tensor

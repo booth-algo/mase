@@ -19,12 +19,39 @@ _src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../s
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-for _pkg in ['chop', 'chop.nn']:
+import logging as _logging
+import torch.nn as _nn
+# Stub packages whose __init__.py has heavy/missing deps (onnx, einops, py3.10+)
+_STUBS = [
+    'chop', 'chop.nn', 'chop.nn.quantized', 'chop.nn.quantized.functional',
+    'chop.nn.quantized.modules', 'chop.nn.quantizers', 'chop.nn.modules',
+    'chop.tools', 'chop.ir',
+    'chop.passes', 'chop.passes.graph',
+    'chop.passes.graph.analysis', 'chop.passes.graph.analysis.add_metadata',
+    'chop.passes.graph.transforms', 'chop.passes.graph.transforms.verilog',
+    'chop.passes.graph.transforms.verilog.logicnets',
+    'chop.passes.graph.transforms.verilog.logicnets.emit_linear',
+]
+for _pkg in _STUBS:
     if _pkg not in sys.modules:
         _mod = types.ModuleType(_pkg)
         _mod.__path__ = [os.path.join(_src, *_pkg.split('.'))]
         _mod.__package__ = _pkg
         sys.modules[_pkg] = _mod
+# Provide attrs required by leaf modules without importing py3.10+/heavy code
+sys.modules['chop.nn'].MASE_LEAF_LAYERS = ()
+sys.modules['chop.nn.quantized'].quantized_func_map = {}
+sys.modules['chop.nn.quantized'].quantized_module_map = {}
+sys.modules['chop.nn.quantized.modules'].quantized_module_map = {}
+sys.modules['chop.nn.quantized.functional'].quantized_func_map = {}
+sys.modules['chop.tools'].get_logger = lambda name: _logging.getLogger(name)
+sys.modules['chop.tools'].get_hf_dummy_in = None
+sys.modules['chop.nn.modules'].GroupedQueryAttention = type(
+    'GroupedQueryAttention', (_nn.Module,), {'forward': lambda self, x: x}
+)
+# logicnets uses quantized linear — DWN doesn't need it, stub it out
+sys.modules['chop.passes.graph.transforms.verilog.logicnets'].LogicNetsLinearVerilog = None
+sys.modules['chop.passes.graph.transforms.verilog.logicnets.emit_linear'].LogicNetsLinearVerilog = None
 
 import torch
 import torch.nn as nn
@@ -146,7 +173,7 @@ def main():
 
     # Load state dict BEFORE any thermometer fitting so that saved thresholds
     # are restored directly from the checkpoint (no re-fitting needed).
-    model.load_state_dict(ckpt["model_state_dict"])
+    model.load_state_dict(ckpt["model_state_dict"], strict=False)
     model = model.to(device)
     model.eval()
 

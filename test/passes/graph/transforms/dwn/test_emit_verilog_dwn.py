@@ -10,6 +10,39 @@ import torch.nn as nn
 _src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../src"))
 sys.path.insert(0, _src)
 
+import types as _types
+import logging as _logging
+
+# Stub packages whose __init__.py requires Python 3.11+ or missing deps (onnx, einops, match/case)
+_STUBS = [
+    "chop", "chop.nn", "chop.nn.quantized", "chop.nn.quantized.functional",
+    "chop.nn.quantized.modules", "chop.nn.quantizers", "chop.nn.modules",
+    "chop.tools", "chop.ir",
+    "chop.passes", "chop.passes.graph",
+    "chop.passes.graph.analysis", "chop.passes.graph.analysis.add_metadata",
+    "chop.passes.graph.transforms", "chop.passes.graph.transforms.verilog",
+    "chop.passes.graph.transforms.verilog.logicnets",
+    "chop.passes.graph.transforms.verilog.logicnets.emit_linear",
+]
+for _pkg in _STUBS:
+    if _pkg not in sys.modules:
+        _mod = _types.ModuleType(_pkg)
+        _mod.__path__ = [os.path.join(_src, *_pkg.split("."))]
+        _mod.__package__ = _pkg
+        sys.modules[_pkg] = _mod
+sys.modules["chop.nn"].MASE_LEAF_LAYERS = ()
+sys.modules["chop.nn.quantized"].quantized_func_map = {}
+sys.modules["chop.nn.quantized"].quantized_module_map = {}
+sys.modules["chop.nn.quantized.modules"].quantized_module_map = {}
+sys.modules["chop.nn.quantized.functional"].quantized_func_map = {}
+sys.modules["chop.tools"].get_logger = lambda name: _logging.getLogger(name)
+sys.modules["chop.tools"].get_hf_dummy_in = None
+sys.modules["chop.nn.modules"].GroupedQueryAttention = type(
+    "GroupedQueryAttention", (nn.Module,), {"forward": lambda self, x: x}
+)
+sys.modules["chop.passes.graph.transforms.verilog.logicnets"].LogicNetsLinearVerilog = None
+sys.modules["chop.passes.graph.transforms.verilog.logicnets.emit_linear"].LogicNetsLinearVerilog = None
+
 CUDA_AVAILABLE = torch.cuda.is_available()
 requires_cuda = pytest.mark.skipif(
     not CUDA_AVAILABLE, reason="EFDFunction requires CUDA"
