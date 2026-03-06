@@ -112,7 +112,7 @@ def parse_args():
     parser.add_argument("--mapping-first", default="learnable",
                         choices=["learnable", "random", "arange"])
     parser.add_argument("--dataset",       type=str,   default="mnist",
-                        help="Dataset to train on: mnist, fashion_mnist, or tabular dataset name "
+                        help="Dataset to train on: mnist, fashion_mnist, cifar10, or tabular dataset name "
                              "(phoneme, skin-seg, higgs, australian, nomao, segment, miniboone, "
                              "christine, jasmine, sylvine, blood). Default: mnist (fake data unless --real-mnist)")
     parser.add_argument("--real-mnist",    action="store_true",
@@ -138,13 +138,13 @@ def load_data(args):
     if args.real_mnist:
         dataset = "mnist"
 
-    if dataset in ("mnist", "fashion_mnist"):
+    if dataset in ("mnist", "fashion_mnist", "cifar10"):
         return _load_vision(dataset, args)
     elif dataset in TABULAR_DATASETS:
         return _load_tabular(dataset, args)
     else:
         raise ValueError(
-            f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, "
+            f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, cifar10, "
             f"{', '.join(TABULAR_DATASETS)}"
         )
 
@@ -160,7 +160,15 @@ def _load_vision(dataset_name, args):
         transforms.ToTensor(),
         transforms.Lambda(lambda x: x.view(-1)),
     ])
-    cls = tvdatasets.MNIST if dataset_name == "mnist" else tvdatasets.FashionMNIST
+    if dataset_name == "mnist":
+        cls = tvdatasets.MNIST
+        num_features = 784
+    elif dataset_name == "fashion_mnist":
+        cls = tvdatasets.FashionMNIST
+        num_features = 784
+    elif dataset_name == "cifar10":
+        cls = tvdatasets.CIFAR10
+        num_features = 3072
     cache = f"~/.cache/{dataset_name}"
     train_ds = cls(cache, train=True,  download=True, transform=transform)
     test_ds  = cls(cache, train=False, download=True, transform=transform)
@@ -168,8 +176,8 @@ def _load_vision(dataset_name, args):
     y_train = torch.tensor([y for _, y in train_ds])
     X_test  = torch.stack([x for x, _ in test_ds])
     y_test  = torch.tensor([y for _, y in test_ds])
-    print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, features=784, classes=10")
-    return X_train, y_train, X_test, y_test, 784, 10
+    print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, features={num_features}, classes=10")
+    return X_train, y_train, X_test, y_test, num_features, 10
 
 
 def _load_tabular(dataset_name, args):
