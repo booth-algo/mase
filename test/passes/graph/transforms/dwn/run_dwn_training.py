@@ -7,6 +7,11 @@ Reference config (Bacellar et al., ICML 2024) — targets ~98.3% on MNIST:
     python run_dwn_training.py --real-mnist --epochs 30 --lut-n 6 \\
         --hidden-sizes 2000 1000 --num-bits 3 --batch-size 32 \\
         --mapping-first learnable --lr 0.01 --lr-step 14
+
+Multi-dataset examples:
+    python run_dwn_training.py --dataset fashion_mnist --epochs 30 --lut-n 6 \\
+        --hidden-sizes 2000 1000 --num-bits 3 --batch-size 32
+    python run_dwn_training.py --dataset phoneme --epochs 20 --hidden-sizes 256 128
 """
 import sys
 import os
@@ -28,6 +33,54 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from chop.nn.dwn import DWNModel
+
+
+def compute_area_loss(model):
+    """
+    Hardware-aware regularization for DWN.
+
+    Two components:
+    1. Mapping entropy loss (differentiable): for LUT layers with LearnableMapping,
+       penalize high entropy of mapping attention weights. High entropy means each
+       LUT input attends to many source features (high routing complexity).
+       Low entropy = concentrated connections = fewer effective routing resources.
+
+    2. Area metric (non-differentiable, logged only): sum_l(output_size_l * 2^n_l)
+       = total LUT table storage across all layers. Logged as 'area_luts' for
+       Pareto analysis between area and accuracy.
+
+    Returns:
+        (entropy_loss: Tensor, area_luts: int)
+    """
+    from chop.nn.dwn.mapping import LearnableMapping
+
+    entropy_loss = torch.tensor(0.0, device=next(model.parameters()).device)
+    area_luts = 0
+
+    for layer in model.lut_layers:
+        # Area metric (logged, not gradient-flowed)
+        area_luts += layer.output_size * (2 ** layer.n)
+
+        # Mapping entropy regularization (differentiable)
+        if isinstance(layer.mapping, LearnableMapping):
+            # weights: (input_size, output_size * n)
+            # Each column is a distribution over input_size source features
+            W = layer.mapping.weights   # (input_size, output_size * n)
+            # Temperature: use the layer's mapping tau (softmax temperature)
+            tau = getattr(layer.mapping, 'tau', 0.001)
+            probs = torch.softmax(W / tau, dim=0)   # (input_size, output_size*n)
+            # Shannon entropy per mapping position, averaged
+            log_probs = torch.log(probs + 1e-10)
+            entropy = -(probs * log_probs).sum(dim=0).mean()  # scalar
+            entropy_loss = entropy_loss + entropy
+
+    return entropy_loss, area_luts
+
+
+TABULAR_DATASETS = [
+    "phoneme", "skin-seg", "higgs", "australian", "nomao",
+    "segment", "miniboone", "christine", "jasmine", "sylvine", "blood",
+]
 
 
 def parse_args():
@@ -52,9 +105,18 @@ def parse_args():
                         help="Batch size (paper uses 32)")
     parser.add_argument("--lambda-reg",    type=float, default=0.0,
                         help="Spectral reg weight (0 = disabled, matches paper)")
+    parser.add_argument("--area-lambda",   type=float, default=0.0,
+                        help="Weight for hardware area regularization. Adds lambda * mapping_entropy_loss "
+                             "to encourage LUT inputs to concentrate on fewer features (lower routing complexity). "
+                             "0 = disabled. Try 1e-4 to 1e-2.")
     parser.add_argument("--mapping-first", default="learnable",
                         choices=["learnable", "random", "arange"])
-    parser.add_argument("--real-mnist",    action="store_true")
+    parser.add_argument("--dataset",       type=str,   default="mnist",
+                        help="Dataset to train on: mnist, fashion_mnist, or tabular dataset name "
+                             "(phoneme, skin-seg, higgs, australian, nomao, segment, miniboone, "
+                             "christine, jasmine, sylvine, blood). Default: mnist (fake data unless --real-mnist)")
+    parser.add_argument("--real-mnist",    action="store_true",
+                        help="(Deprecated) Use --dataset mnist. Equivalent to --dataset mnist with real data.")
     parser.add_argument("--n-train",       type=int,   default=640,
                         help="Training samples for fake data mode")
     parser.add_argument("--seed",          type=int,   default=42)
@@ -70,25 +132,77 @@ def parse_args():
 
 
 def load_data(args):
+    """Load dataset. Returns (X_train, y_train, X_test, y_test, input_features, num_classes)."""
+    dataset = args.dataset
+    # Backward compat
     if args.real_mnist:
-        try:
-            from torchvision import datasets, transforms
-        except ImportError:
-            print("torchvision not available; falling back to fake data")
-            return _fake_data(args)
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x.view(-1)),
-        ])
-        train_ds = datasets.MNIST("~/.cache/mnist", train=True,  download=True, transform=transform)
-        test_ds  = datasets.MNIST("~/.cache/mnist", train=False, download=True, transform=transform)
-        X_train = torch.stack([x for x, _ in train_ds])
-        y_train = torch.tensor([y for _, y in train_ds])
-        X_test  = torch.stack([x for x, _ in test_ds])
-        y_test  = torch.tensor([y for _, y in test_ds])
-        print(f"MNIST: {len(X_train)} train, {len(X_test)} test samples")
-        return X_train, y_train, X_test, y_test
-    return _fake_data(args)
+        dataset = "mnist"
+
+    if dataset in ("mnist", "fashion_mnist"):
+        return _load_vision(dataset, args)
+    elif dataset in TABULAR_DATASETS:
+        return _load_tabular(dataset, args)
+    else:
+        raise ValueError(
+            f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, "
+            f"{', '.join(TABULAR_DATASETS)}"
+        )
+
+
+def _load_vision(dataset_name, args):
+    try:
+        from torchvision import datasets as tvdatasets, transforms
+    except ImportError:
+        print("torchvision not available; falling back to fake data")
+        return _fake_data(args)
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Lambda(lambda x: x.view(-1)),
+    ])
+    cls = tvdatasets.MNIST if dataset_name == "mnist" else tvdatasets.FashionMNIST
+    cache = f"~/.cache/{dataset_name}"
+    train_ds = cls(cache, train=True,  download=True, transform=transform)
+    test_ds  = cls(cache, train=False, download=True, transform=transform)
+    X_train = torch.stack([x for x, _ in train_ds])
+    y_train = torch.tensor([y for _, y in train_ds])
+    X_test  = torch.stack([x for x, _ in test_ds])
+    y_test  = torch.tensor([y for _, y in test_ds])
+    print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, features=784, classes=10")
+    return X_train, y_train, X_test, y_test, 784, 10
+
+
+def _load_tabular(dataset_name, args):
+    try:
+        from sklearn.datasets import fetch_openml
+        from sklearn.model_selection import train_test_split
+        from sklearn.preprocessing import LabelEncoder
+        import numpy as np
+    except ImportError:
+        raise ImportError("scikit-learn is required for tabular datasets: pip install scikit-learn")
+
+    print(f"Fetching {dataset_name} from OpenML...")
+    data = fetch_openml(name=dataset_name, version=1, as_frame=False, parser="auto")
+    X = data.data.astype(np.float32)
+    y_raw = data.target
+
+    # Encode labels as integers 0..K-1
+    le = LabelEncoder()
+    y = le.fit_transform(y_raw).astype(np.int64)
+    num_classes = len(le.classes_)
+
+    X_train_np, X_test_np, y_train_np, y_test_np = train_test_split(
+        X, y, test_size=0.2, random_state=args.seed, stratify=y
+    )
+    X_train = torch.tensor(X_train_np)
+    y_train = torch.tensor(y_train_np, dtype=torch.long)
+    X_test  = torch.tensor(X_test_np)
+    y_test  = torch.tensor(y_test_np, dtype=torch.long)
+
+    input_features = X_train.shape[1]
+    print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, "
+          f"features={input_features}, classes={num_classes}")
+    return X_train, y_train, X_test, y_test, input_features, num_classes
 
 
 def _fake_data(args):
@@ -97,7 +211,7 @@ def _fake_data(args):
     y_train = torch.randint(0, 10, (args.n_train,))
     X_test  = torch.randn(200, 784)
     y_test  = torch.randint(0, 10, (200,))
-    return X_train, y_train, X_test, y_test
+    return X_train, y_train, X_test, y_test, 784, 10
 
 
 def _ckpt_dir():
@@ -126,7 +240,7 @@ def eval_checkpoint(args, device):
         print(f"  Config: hidden_sizes={cfg['hidden_sizes']}, lut_n={cfg['lut_n']}, "
               f"mapping_first={cfg['mapping_first']}, num_bits={cfg['num_bits']}")
 
-    X_train, _, X_test, y_test = load_data(args)
+    X_train, _, X_test, y_test, _, _ = load_data(args)
     model = DWNModel(**cfg)
     model.fit_thermometer(X_train, verbose=True)
     model.load_state_dict(ckpt["model_state_dict"])
@@ -165,15 +279,16 @@ def main():
         return eval_checkpoint(args, device)
 
     print("=== DWN Training ===")
-    print(f"  epochs={args.epochs}, hidden_sizes={args.hidden_sizes}, lut_n={args.lut_n}, "
+    print(f"  dataset={args.dataset}, epochs={args.epochs}, hidden_sizes={args.hidden_sizes}, lut_n={args.lut_n}, "
           f"num_bits={args.num_bits}, tau={args.tau:.3f}, lr={args.lr}, "
           f"batch={args.batch_size}, lr_step={args.lr_step}")
+    print(f"  area_lambda={args.area_lambda}")
 
-    X_train, y_train, X_test, y_test = load_data(args)
+    X_train, y_train, X_test, y_test, input_features, num_classes = load_data(args)
 
     model = DWNModel(
-        input_features=784,
-        num_classes=10,
+        input_features=input_features,
+        num_classes=num_classes,
         num_bits=args.num_bits,
         hidden_sizes=args.hidden_sizes,
         lut_n=args.lut_n,
@@ -204,8 +319,8 @@ def main():
     best_acc = 0.0
     epochs_no_improve = 0
     n_batches = len(loader)
-    print(f"\n{'Epoch':>6}  {'Loss':>8}  {'Acc':>7}  {'Best':>7}  {'LR':>8}")
-    print("-" * 48)
+    print(f"\n{'Epoch':>6}  {'Loss':>8}  {'Acc':>7}  {'Best':>7}  {'LR':>8}  {'AreaLUTs':>10}")
+    print("-" * 62)
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -215,6 +330,9 @@ def main():
             loss = criterion(model(x_batch), y_batch)
             if args.lambda_reg > 0:
                 loss = loss + model.get_spectral_reg_loss()
+            if args.area_lambda > 0:
+                entropy_loss, _ = compute_area_loss(model)
+                loss = loss + args.area_lambda * entropy_loss
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -228,6 +346,7 @@ def main():
             correct = (model(X_test).argmax(1) == y_test).sum().item()
         acc = correct / len(y_test)
         avg_loss = epoch_loss / n_batches
+        _, area_luts = compute_area_loss(model)
 
         if acc > best_acc:
             best_acc = acc
@@ -238,8 +357,8 @@ def main():
                 "acc": acc,
                 "loss": avg_loss,
                 "model_config": {
-                    "input_features": 784,
-                    "num_classes": 10,
+                    "input_features": input_features,
+                    "num_classes": num_classes,
                     "num_bits": args.num_bits,
                     "hidden_sizes": args.hidden_sizes,
                     "lut_n": args.lut_n,
@@ -247,13 +366,14 @@ def main():
                     "mapping_rest": "random",
                     "tau": args.tau,
                     "lambda_reg": args.lambda_reg,
+                    "area_lambda": args.area_lambda,
                 },
             }, ckpt_path)
         else:
             epochs_no_improve += 1
 
         saved = "  <-- saved" if acc >= best_acc else ""
-        print(f"\r{epoch:>6}  {avg_loss:>8.4f}  {acc:>7.4f}  {best_acc:>7.4f}  {current_lr:>8.2e}{saved}".ljust(70))
+        print(f"\r{epoch:>6}  {avg_loss:>8.4f}  {acc:>7.4f}  {best_acc:>7.4f}  {current_lr:>8.2e}  {area_luts:>10,}{saved}".ljust(70))
 
         if args.patience and epochs_no_improve >= args.patience:
             print(f"\nEarly stopping: no improvement for {args.patience} epochs.")
