@@ -64,6 +64,40 @@ Higher-dimensional inputs likely require larger early-layer fan-in to capture fe
 
 ---
 
+## CIFAR-10 2-Layer Mixed-N (2048×2050 hidden, num_bits=10, tau=33.33, 15 epochs, 10k samples)
+
+**First-layer fan-in dominance holds on CIFAR-10 too.**
+
+| N Config | AreaLUTs | Accuracy | Pareto |
+|----------|----------|----------|--------|
+| 2-2      | 16,392   | 36.74%   | *      |
+| **4-2**  | **40,968** | **38.59%** | * |
+| 2-4      | 40,992   | 38.15%   | (dominated) |
+| 4-4      | 65,568   | 39.81%   | *      |
+| 6-2      | 139,272  | 39.89%   | *      |
+| 2-6      | 139,392  | 39.54%   | (dominated) |
+| **6-4**  | **163,872** | **40.69%** | * |
+| 4-6      | 163,968  | 39.69%   | (dominated) |
+| **6-6**  | 262,272  | 39.55%   | **(dominated by 6-4!)** |
+
+### Findings
+
+1. **`4-2` beats `2-4` at same area**: 38.59% vs 38.15% — first-layer fan-in dominates, same as MNIST.
+2. **`6-4` dominates both `4-6` and `6-6`**: 40.69% vs 39.69%/39.55% — N=4 in layer 2 is
+   more efficient than N=6. Adding fan-in in layer 1 is always more valuable.
+3. **`6-6` is non-Pareto**: dominated by `6-4` which is cheaper AND more accurate.
+
+### Contrast with num_bits=2 result
+
+Earlier 50-epoch num_bits=2 run showed `6-6` (45.50%) > `4-6` (45.11%). The num_bits=10
+search reverses this: `6-4` > `4-6` > `6-6`. The discrepancy may be due to the lower-
+resolution thermometer (num_bits=2) requiring more LUT fan-in to compensate.
+
+**The first-layer fan-in dominance is robust**: confirmed on MNIST (784 features) and
+CIFAR-10 (3072 features) with num_bits=10.
+
+---
+
 ## CIFAR-10 Scaling (paper config: num_bits=10, tau=33.33, N=6, random mapping)
 
 Scaling hidden layer size trades area for accuracy, approaching paper's 57.42%:
