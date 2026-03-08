@@ -79,6 +79,31 @@ def _fake_data(n_train=640):
     return X_train, y_train, X_test, y_test, 784, 10
 
 
+def _load_cifar10(n_train=None):
+    try:
+        from torchvision import datasets as tvdatasets, transforms
+    except ImportError:
+        print("torchvision not available; falling back to fake data")
+        return _fake_data(n_train or 640)
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Lambda(lambda x: x.view(-1).float()),
+    ])
+    cache = os.path.expanduser("~/.cache/cifar10")
+    train_ds = tvdatasets.CIFAR10(cache, train=True,  download=True, transform=transform)
+    test_ds  = tvdatasets.CIFAR10(cache, train=False, download=True, transform=transform)
+    X_train = torch.stack([x for x, _ in train_ds])
+    y_train = torch.tensor([y for _, y in train_ds])
+    X_test  = torch.stack([x for x, _ in test_ds])
+    y_test  = torch.tensor([y for _, y in test_ds])
+    if n_train is not None and n_train < len(X_train):
+        X_train = X_train[:n_train]
+        y_train = y_train[:n_train]
+    print(f"cifar10: {len(X_train)} train, {len(X_test)} test, features=3072, classes=10")
+    return X_train, y_train, X_test, y_test, 3072, 10
+
+
 def _load_vision(dataset_name, n_train=None):
     try:
         from torchvision import datasets as tvdatasets, transforms
@@ -116,6 +141,8 @@ def load_data(args):
         if not args.real_data:
             return _fake_data(args.n_train)
         return _load_vision(dataset, args.n_train)
+    elif dataset == "cifar10":
+        return _load_cifar10(args.n_train)
     elif dataset in TABULAR_DATASETS:
         try:
             from sklearn.datasets import fetch_openml
@@ -140,7 +167,7 @@ def load_data(args):
         )
     else:
         raise ValueError(
-            f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, "
+            f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, cifar10, "
             + ", ".join(TABULAR_DATASETS)
         )
 
@@ -199,7 +226,7 @@ def train_config(lut_n_list, input_features, num_classes, args,
         lut_n=lut_n_list,
         mapping_first=args.mapping_first,
         mapping_rest="random",
-        tau=1.0 / 0.3,
+        tau=args.tau,
         lambda_reg=0.0,
     )
 
@@ -213,7 +240,7 @@ def train_config(lut_n_list, input_features, num_classes, args,
 
     dataset  = TensorDataset(X_tr, y_tr)
     loader   = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
 
     best_acc = 0.0
@@ -282,6 +309,10 @@ def parse_args():
     parser.add_argument("--mapping-first", type=str,   default="learnable",
                         choices=["learnable", "random", "arange"],
                         help="Mapping type for first LUT layer")
+    parser.add_argument("--tau",           type=float, default=3.333,
+                        help="Temperature tau for DWNModel (default: 3.333)")
+    parser.add_argument("--lr",            type=float, default=0.01,
+                        help="Learning rate for Adam optimizer")
     return parser.parse_args()
 
 
