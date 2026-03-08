@@ -101,6 +101,12 @@ def parse_args():
     parser.add_argument("--lr-step",       type=int,   default=14,
                         help="StepLR step size (paper uses 14)")
     parser.add_argument("--lr-gamma",      type=float, default=0.1)
+    parser.add_argument("--lr-milestones", type=int,   nargs="*", default=[],
+                        help="Epoch milestones for MultiStepLR (e.g. --lr-milestones 10 20). "
+                             "If provided, uses MultiStepLR instead of StepLR.")
+    parser.add_argument("--augment",       action="store_true", default=False,
+                        help="Apply data augmentation for cifar10 training data "
+                             "(RandomCrop 32 pad=4 + RandomHorizontalFlip).")
     parser.add_argument("--batch-size",    type=int,   default=32,
                         help="Batch size (paper uses 32)")
     parser.add_argument("--lambda-reg",    type=float, default=0.0,
@@ -170,7 +176,16 @@ def _load_vision(dataset_name, args):
         cls = tvdatasets.CIFAR10
         num_features = 3072
     cache = f"~/.cache/{dataset_name}"
-    train_ds = cls(cache, train=True,  download=True, transform=transform)
+    if dataset_name == "cifar10" and getattr(args, "augment", False):
+        train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.view(-1)),
+        ])
+    else:
+        train_transform = transform
+    train_ds = cls(cache, train=True,  download=True, transform=train_transform)
     test_ds  = cls(cache, train=False, download=True, transform=transform)
     X_train = torch.stack([x for x, _ in train_ds])
     y_train = torch.tensor([y for _, y in train_ds])
@@ -327,7 +342,10 @@ def main():
     dataset  = TensorDataset(X_train, y_train)
     loader   = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step, gamma=args.lr_gamma)
+    if args.lr_milestones:
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.lr_milestones, gamma=args.lr_gamma)
+    else:
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step, gamma=args.lr_gamma)
     criterion = nn.CrossEntropyLoss()
 
     ckpt_dir = _ckpt_dir()

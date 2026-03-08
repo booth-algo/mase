@@ -10,7 +10,7 @@ python run_dwn_training.py \
   --dataset cifar10 --epochs 50 \
   --hidden-sizes 2048 2048 --lut-n 6 \
   --num-bits 2 --tau 3.333 --lr 0.01 --batch 64 \
-  --checkpoint mase_output/dwn/cifar10_50ep.pt
+  --ckpt mase_output/dwn/cifar10_50ep.pt
 ```
 
 ## Ideas / Follow-up
