@@ -1,4 +1,3 @@
-from __future__ import annotations
 try:
     import mase_triton
 

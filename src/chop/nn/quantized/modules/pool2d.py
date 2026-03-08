@@ -1,4 +1,3 @@
-from __future__ import annotations
 from functools import partial
 from math import ceil, log2
 from typing import Optional, Union

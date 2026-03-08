@@ -1,4 +1,3 @@
-from __future__ import annotations
 try:
     from mase_triton.random_bitflip.layers import RandomBitFlipLinear
 
