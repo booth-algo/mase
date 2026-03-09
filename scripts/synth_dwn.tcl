@@ -1,23 +1,27 @@
 # Vivado out-of-context synthesis for DWN top-level.
 #
-# Usage (called by run.sh or scripts/run-vivado.sh):
-#   vivado -mode batch -source scripts/synth_dwn.tcl \
-#          -tclargs <rtl_dir> <results_dir> [<part>]
+# Usage:
+#   vivado -mode batch -source synth_dwn.tcl \
+#          -tclargs <rtl_dir> <results_dir> [<part> [<top_module> [<clk_period_ns>]]]
 #
 # Arguments:
-#   rtl_dir     Directory containing dwn_top.sv and RTL dependencies
-#   results_dir Directory to write utilization/timing reports
-#   part        (optional) Xilinx part string — default xcvc1902-viva1596-3HP-e-S
+#   rtl_dir        Directory containing dwn_top.sv and RTL dependencies
+#   results_dir    Directory to write utilization/timing reports
+#   part           (optional) Xilinx part string — default xcvc1902-viva1596-3HP-e-S
+#   top_module     (optional) Top module name — default dwn_top
+#   clk_period_ns  (optional) Clock period in ns for pipelined variant — default 2.0
 #
-# Matching Jino et al. (DiffLogic+MASE, Imperial College) setup for comparability.
+# Paper comparison target (Bacellar et al. OOC Appendix D):
+#   part=xcvu9p-flgb2104-2-i  clk_period_ns=4.0  (250 MHz)
 
 # -----------------------------------------------------------------------
 # Parse arguments
 # -----------------------------------------------------------------------
-set rtl_dir     [lindex $argv 0]
-set results_dir [lindex $argv 1]
-set part        [expr { [llength $argv] > 2 ? [lindex $argv 2] : "xcvc1902-viva1596-3HP-e-S" }]
-set top_module  [expr { [llength $argv] > 3 ? [lindex $argv 3] : "dwn_top" }]
+set rtl_dir       [lindex $argv 0]
+set results_dir   [lindex $argv 1]
+set part          [expr { [llength $argv] > 2 ? [lindex $argv 2] : "xcvc1902-viva1596-3HP-e-S" }]
+set top_module    [expr { [llength $argv] > 3 ? [lindex $argv 3] : "dwn_top" }]
+set clk_period_ns [expr { [llength $argv] > 4 ? [lindex $argv 4] : "2.0" }]
 
 file mkdir $results_dir
 
@@ -27,6 +31,7 @@ puts "  RTL dir    : $rtl_dir"
 puts "  Results dir: $results_dir"
 puts "  Part       : $part"
 puts "  Top module : $top_module"
+puts "  Clk period : $clk_period_ns ns"
 puts "================================================================"
 
 # -----------------------------------------------------------------------
@@ -59,7 +64,7 @@ synth_design \
 # Add clock constraint when synthesising the pipelined variant
 # (must be called after synth_design opens the design)
 if { $top_module eq "dwn_top_clocked" } {
-    create_clock -period 2.0 -name clk [get_ports clk]
+    create_clock -period $clk_period_ns -name clk [get_ports clk]
 }
 
 # -----------------------------------------------------------------------
