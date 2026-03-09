@@ -63,7 +63,7 @@ synth_design \
 
 # Add clock constraint when synthesising the pipelined variant
 # (must be called after synth_design opens the design)
-if { $top_module eq "dwn_top_clocked" } {
+if { [string match "*_clocked" $top_module] } {
     create_clock -period $clk_period_ns -name clk [get_ports clk]
 }
 
