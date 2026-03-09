@@ -1,11 +1,11 @@
-# Vivado out-of-context synthesis for DWN top-level.
+# Vivado out-of-context synthesis for DiffLogic top-level.
 #
-# Usage (called by run.sh or scripts/run-vivado.sh):
-#   vivado -mode batch -source scripts/synth_dwn.tcl \
+# Usage:
+#   vivado -mode batch -source scripts/synth_difflogic.tcl \
 #          -tclargs <rtl_dir> <results_dir> [<part>]
 #
 # Arguments:
-#   rtl_dir     Directory containing dwn_top.sv and RTL dependencies
+#   rtl_dir     Directory containing difflogic_top.sv and RTL dependencies
 #   results_dir Directory to write utilization/timing reports
 #   part        (optional) Xilinx part string — default xcvc1902-viva1596-3HP-e-S
 #
@@ -17,16 +17,14 @@
 set rtl_dir     [lindex $argv 0]
 set results_dir [lindex $argv 1]
 set part        [expr { [llength $argv] > 2 ? [lindex $argv 2] : "xcvc1902-viva1596-3HP-e-S" }]
-set top_module  [expr { [llength $argv] > 3 ? [lindex $argv 3] : "dwn_top" }]
 
 file mkdir $results_dir
 
 puts "================================================================"
-puts "DWN Synthesis"
+puts "DiffLogic Synthesis"
 puts "  RTL dir    : $rtl_dir"
 puts "  Results dir: $results_dir"
 puts "  Part       : $part"
-puts "  Top module : $top_module"
 puts "================================================================"
 
 # -----------------------------------------------------------------------
@@ -40,30 +38,22 @@ if { [llength $sv_files] == 0 } {
     exit 1
 }
 read_verilog -sv $sv_files
-set _fnames {}
-foreach _f $sv_files { lappend _fnames [file tail $_f] }
-puts "Read [llength $sv_files] source file(s): [join $_fnames {, }]"
+puts "Read [llength $sv_files] source file(s): [join [lmap f $sv_files {file tail $f}] {, }]"
 
-set_property top $top_module [current_fileset]
+set_property top difflogic_top [current_fileset]
 
 # -----------------------------------------------------------------------
 # Synthesise (out-of-context, performance-optimised — matches Jino et al.)
 # -----------------------------------------------------------------------
 synth_design \
-    -top $top_module \
+    -top difflogic_top \
     -part $part \
     -mode out_of_context \
     -flatten_hierarchy rebuilt \
     -directive PerformanceOptimized
 
-# Add clock constraint when synthesising the pipelined variant
-# (must be called after synth_design opens the design)
-if { $top_module eq "dwn_top_clocked" } {
-    create_clock -period 2.0 -name clk [get_ports clk]
-}
-
 # -----------------------------------------------------------------------
-# Assess maximum frequency (AMD guide: iterate implementation until timing met)
+# Assess maximum frequency (place + route for timing analysis)
 # -----------------------------------------------------------------------
 opt_design
 place_design

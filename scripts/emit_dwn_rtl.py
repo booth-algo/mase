@@ -31,6 +31,10 @@ def parse_args():
                         help="Full checkpoint path (overrides --ckpt-name)")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Output directory for emitted RTL (default: mase_output/dwn/<ckpt-name>_rtl)")
+    parser.add_argument("--emit-blif", action="store_true",
+                        help="Also emit a BLIF file for ABC Boolean minimisation")
+    parser.add_argument("--pipelined", action="store_true",
+                        help="Also emit a pipelined (clocked) variant: dwn_top_clocked.sv")
     return parser.parse_args()
 
 
@@ -72,7 +76,10 @@ def main():
     print(f"Device: {device}")
 
     # Reconstruct model to get trained LUT layer weights
-    model = DWNModel(**cfg).to(device)
+    # Strip training-only keys not accepted by DWNModel.__init__
+    model_kwargs = {k: v for k, v in cfg.items()
+                    if k not in ('area_lambda', 'lambda_reg')}
+    model = DWNModel(**model_kwargs).to(device)
 
     # fit_thermometer must be called before load_state_dict so that the
     # thermometer.thresholds buffer is registered (otherwise load_state_dict
@@ -148,6 +155,45 @@ def main():
     print(f"\nSynthesis command (on Vivado server):")
     print(f"  vivado -mode batch -source scripts/synth_dwn.tcl "
           f"-tclargs {os.path.abspath(rtl_dir)} {os.path.abspath(output_dir)}/synth_results")
+
+    if args.emit_blif:
+        from mase_components.dwn_layers.blif import emit_network_blif
+        blif_path = os.path.join(output_dir, "network.blif")
+        emit_network_blif(model, blif_path)
+        print(f"\nBLIF written to: {os.path.abspath(blif_path)}")
+
+    if args.pipelined:
+        # 1. Read the emitted dwn_top.sv
+        top_sv_path = os.path.join(rtl_dir, "dwn_top.sv")
+        with open(top_sv_path, "r") as f:
+            top_sv = f.read()
+
+        # 2. Substitute module name and layer module references
+        clocked_sv = top_sv.replace("module dwn_top", "module dwn_top_clocked")
+        clocked_sv = clocked_sv.replace("fixed_dwn_lut_layer ", "fixed_dwn_lut_layer_clocked ")
+
+        # 3. Write dwn_top_clocked.sv
+        clocked_top_path = os.path.join(rtl_dir, "dwn_top_clocked.sv")
+        with open(clocked_top_path, "w") as f:
+            f.write(clocked_sv)
+
+        # 4. Copy fixed_dwn_lut_layer_clocked.sv into the output RTL dir
+        import shutil
+        clocked_layer_src = os.path.join(
+            os.path.dirname(__file__),
+            "../src/mase_components/dwn_layers/rtl/fixed_dwn_lut_layer_clocked.sv",
+        )
+        clocked_layer_dst = os.path.join(rtl_dir, "fixed_dwn_lut_layer_clocked.sv")
+        shutil.copy(clocked_layer_src, clocked_layer_dst)
+
+        print(f"\nPipelined RTL emitted:")
+        print(f"  {clocked_top_path}")
+        print(f"  {clocked_layer_dst}")
+        print(f"\nSynthesis command for clocked variant (on Vivado server):")
+        print(f"  vivado -mode batch -source scripts/synth_dwn.tcl "
+              f"-tclargs {os.path.abspath(rtl_dir)} "
+              f"{os.path.abspath(output_dir)}/synth_results_clocked "
+              f"xcvc1902-viva1596-3HP-e-S dwn_top_clocked")
 
 
 if __name__ == "__main__":

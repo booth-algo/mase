@@ -28,9 +28,16 @@ class LearnableMappingFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, output_grad):
-        x, weights, tau  = ctx.saved_tensors
+        x, weights, tau = ctx.saved_tensors
         weights_grad = ((2*x-1).T @ output_grad)
-        input_grad = output_grad @ softmax(weights/tau, dim=0).T
+        # Chunked softmax to avoid materializing full (input_size, output_size) tensor
+        chunk_size = 2000
+        input_grad = torch.zeros_like(x)
+        for start in range(0, weights.shape[1], chunk_size):
+            end = min(start + chunk_size, weights.shape[1])
+            w_chunk = weights[:, start:end]
+            sm_chunk = softmax(w_chunk / tau, dim=0)
+            input_grad += output_grad[:, start:end] @ sm_chunk.T
         return input_grad, weights_grad, None, None
 
 

@@ -68,10 +68,17 @@ def compute_area_loss(model):
             W = layer.mapping.weights   # (input_size, output_size * n)
             # Temperature: use the layer's mapping tau (softmax temperature)
             tau = getattr(layer.mapping, 'tau', 0.001)
-            probs = torch.softmax(W / tau, dim=0)   # (input_size, output_size*n)
-            # Shannon entropy per mapping position, averaged
-            log_probs = torch.log(probs + 1e-10)
-            entropy = -(probs * log_probs).sum(dim=0).mean()  # scalar
+            # Chunked entropy to avoid materializing full (input_size, output_size*n) tensor
+            chunk_size = 2000
+            num_cols = W.shape[1]
+            col_entropies = []
+            for start in range(0, num_cols, chunk_size):
+                end = min(start + chunk_size, num_cols)
+                W_chunk = W[:, start:end]
+                probs_chunk = torch.softmax(W_chunk / tau, dim=0)
+                log_probs_chunk = torch.log(probs_chunk + 1e-10)
+                col_entropies.append(-(probs_chunk * log_probs_chunk).sum(dim=0))
+            entropy = torch.cat(col_entropies).mean()  # scalar
             entropy_loss = entropy_loss + entropy
 
     return entropy_loss, area_luts
@@ -107,6 +114,10 @@ def parse_args():
     parser.add_argument("--augment",       action="store_true", default=False,
                         help="Apply data augmentation for cifar10 training data "
                              "(RandomCrop 32 pad=4 + RandomHorizontalFlip).")
+    parser.add_argument("--augment-refit", action="store_true", default=False,
+                        help="When --augment is set, fit thermometer thresholds on "
+                             "UNAUGMENTED images (matching test distribution) while still "
+                             "training on augmented images. Requires --augment.")
     parser.add_argument("--batch-size",    type=int,   default=32,
                         help="Batch size (paper uses 32)")
     parser.add_argument("--lambda-reg",    type=float, default=0.0,
@@ -115,6 +126,11 @@ def parse_args():
                         help="Weight for hardware area regularization. Adds lambda * mapping_entropy_loss "
                              "to encourage LUT inputs to concentrate on fewer features (lower routing complexity). "
                              "0 = disabled. Try 1e-4 to 1e-2.")
+    parser.add_argument("--optimizer",     type=str,   default="adam",
+                        choices=["adam", "sgd"],
+                        help="Optimizer to use: adam (default) or sgd")
+    parser.add_argument("--momentum",     type=float, default=0.9,
+                        help="Momentum for SGD optimizer (default: 0.9)")
     parser.add_argument("--mapping-first", default="learnable",
                         choices=["learnable", "random", "arange"])
     parser.add_argument("--dataset",       type=str,   default="mnist",
@@ -138,7 +154,11 @@ def parse_args():
 
 
 def load_data(args):
-    """Load dataset. Returns (X_train, y_train, X_test, y_test, input_features, num_classes)."""
+    """Load dataset. Returns (X_train, y_train, X_test, y_test, input_features, num_classes, X_train_base).
+
+    X_train_base is the unaugmented X_train used for thermometer fitting when --augment-refit
+    is set; otherwise it is None.
+    """
     dataset = args.dataset
     # Backward compat
     if args.real_mnist:
@@ -147,7 +167,8 @@ def load_data(args):
     if dataset in ("mnist", "fashion_mnist", "cifar10"):
         return _load_vision(dataset, args)
     elif dataset in TABULAR_DATASETS:
-        return _load_tabular(dataset, args)
+        result = _load_tabular(dataset, args)
+        return result + (None,)
     else:
         raise ValueError(
             f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, cifar10, "
@@ -191,8 +212,16 @@ def _load_vision(dataset_name, args):
     y_train = torch.tensor([y for _, y in train_ds])
     X_test  = torch.stack([x for x, _ in test_ds])
     y_test  = torch.tensor([y for _, y in test_ds])
+
+    # When --augment-refit is set, also load unaugmented X_train for thermometer fitting
+    X_train_base = None
+    if dataset_name == "cifar10" and getattr(args, "augment", False) and getattr(args, "augment_refit", False):
+        print("augment-refit: loading unaugmented X_train for thermometer fitting...")
+        base_ds = cls(cache, train=True, download=False, transform=transform)
+        X_train_base = torch.stack([x for x, _ in base_ds])
+
     print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, features={num_features}, classes=10")
-    return X_train, y_train, X_test, y_test, num_features, 10
+    return X_train, y_train, X_test, y_test, num_features, 10, X_train_base
 
 
 def _load_tabular(dataset_name, args):
@@ -234,7 +263,7 @@ def _fake_data(args):
     y_train = torch.randint(0, 10, (args.n_train,))
     X_test  = torch.randn(200, 784)
     y_test  = torch.randint(0, 10, (200,))
-    return X_train, y_train, X_test, y_test, 784, 10
+    return X_train, y_train, X_test, y_test, 784, 10, None
 
 
 def _ckpt_dir():
@@ -263,7 +292,7 @@ def eval_checkpoint(args, device):
         print(f"  Config: hidden_sizes={cfg['hidden_sizes']}, lut_n={cfg['lut_n']}, "
               f"mapping_first={cfg['mapping_first']}, num_bits={cfg['num_bits']}")
 
-    X_train, _, X_test, y_test, _, _ = load_data(args)
+    X_train, _, X_test, y_test, _, _, _ = load_data(args)
     _DWN_VALID_KEYS = {"input_features", "num_classes", "num_bits", "hidden_sizes", "lut_n", "mapping_first", "mapping_rest", "tau", "lambda_reg"}
     cfg_filtered = {k: v for k, v in cfg.items() if k in _DWN_VALID_KEYS}
     model = DWNModel(**cfg_filtered)
@@ -309,7 +338,7 @@ def main():
           f"batch={args.batch_size}, lr_step={args.lr_step}")
     print(f"  area_lambda={args.area_lambda}")
 
-    X_train, y_train, X_test, y_test, input_features, num_classes = load_data(args)
+    X_train, y_train, X_test, y_test, input_features, num_classes, X_train_base = load_data(args)
 
     # Validate that last hidden size is divisible by num_classes for GroupSum
     if args.hidden_sizes[-1] % num_classes != 0:
@@ -333,7 +362,10 @@ def main():
     print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     print("Fitting thermometer encodings...")
-    model.fit_thermometer(X_train, verbose=True)
+    thermo_data = X_train_base if X_train_base is not None else X_train
+    if X_train_base is not None:
+        print("  (using unaugmented X_train_base for thermometer fitting — augment-refit mode)")
+    model.fit_thermometer(thermo_data, verbose=True)
 
     model = model.to(device)
     X_train, y_train = X_train.to(device), y_train.to(device)
@@ -341,7 +373,10 @@ def main():
 
     dataset  = TensorDataset(X_train, y_train)
     loader   = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.optimizer == "sgd":
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=1e-4)
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     if args.lr_milestones:
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.lr_milestones, gamma=args.lr_gamma)
     else:
@@ -382,7 +417,7 @@ def main():
             correct = (model(X_test).argmax(1) == y_test).sum().item()
         acc = correct / len(y_test)
         avg_loss = epoch_loss / n_batches
-        _, area_luts = compute_area_loss(model)
+        area_luts = sum(layer.output_size * (2 ** layer.n) for layer in model.lut_layers)
 
         if acc > best_acc:
             best_acc = acc
