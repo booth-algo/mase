@@ -152,7 +152,7 @@ def emit_clocked_wrapper(rtl_dir, cfg, thresholds_sv, feature_width):
     num_classes = cfg["num_classes"]
     lut_output = cfg["hidden_sizes"][-1]
     thermo_bits = num_features * num_bits
-    score_width = f"$clog2({lut_output}/{num_classes})+1"
+    score_width = f"$clog2({lut_output}/{num_classes})"
 
     sv = f"""\
 // Full DWN inference pipeline — clocked/registered variant.
