@@ -543,10 +543,10 @@ def _load_toyadmos(args):
     Binary classification: normal (0) vs anomalous (1).
     Features: log-mel spectrogram, 128 mel bins × 5 consecutive frames = 640 features.
     Paper config (Table 14): z=3 therm. bits, hidden=[1800,1800], n=6, 100 epochs.
-    Downloads ~1.8GB to /data/toyadmos/.
+    Downloads ~1.8GB to /data/datasets/toyadmos/.
 
-    Dev set: normal/anomaly clips for machine IDs 01-04.
-    Train on normal from IDs 01-03, test on both from ID 04 (like MLPerf Tiny split).
+    Zip extracts to ToyCar/train/ (all normal) and ToyCar/test/ (normal + anomaly).
+    Label is determined by filename prefix: normal_* -> 0, anomaly_* -> 1.
     """
     import numpy as np
     import os
@@ -570,7 +570,7 @@ def _load_toyadmos(args):
     # DCASE 2020 Task 2 ToyCar dev dataset (1.8 GB)
     DEV_ZIP_URL = "https://zenodo.org/record/3678171/files/dev_data_ToyCar.zip"
     dev_zip_path = os.path.join(cache_dir, "dev_data_ToyCar.zip")
-    dev_data_dir = os.path.join(cache_dir, "dev_data_ToyCar")
+    dev_data_dir = os.path.join(cache_dir, "ToyCar")
 
     if not os.path.exists(dev_data_dir):
         if not os.path.exists(dev_zip_path):
@@ -580,6 +580,19 @@ def _load_toyadmos(args):
         print("  Extracting...")
         with zipfile.ZipFile(dev_zip_path, "r") as zf:
             zf.extractall(cache_dir)
+
+    features_cache = os.path.join(cache_dir, "toyadmos_features.pt")
+    if os.path.exists(features_cache):
+        print(f"Loading cached features from {features_cache}...")
+        cached = torch.load(features_cache, map_location="cpu")
+        X_train = cached["X_train"]
+        y_train = cached["y_train"]
+        X_test  = cached["X_test"]
+        y_test  = cached["y_test"]
+        num_features = X_train.shape[1]
+        print(f"toyadmos: {len(X_train)} train (all normal), {len(X_test)} test "
+              f"(normal+anomaly), features={num_features}, classes=2")
+        return X_train, y_train, X_test, y_test, num_features, 2
 
     # MLPerf Tiny anomaly detection spec: 128 mel, 5 frames, 1024 FFT, 512 hop
     SAMPLE_RATE = 16000
@@ -611,46 +624,53 @@ def _load_toyadmos(args):
             patch = torch.nn.functional.pad(patch, (0, N_FRAMES - patch.shape[1]))
         return patch.transpose(0, 1).reshape(-1).numpy()  # (640,)
 
-    # Build dataset: use IDs 01-03 for train, ID 04 for test
-    train_ids = ["id_01", "id_02", "id_03"]
-    test_ids  = ["id_04"]
-
-    def collect_split(machine_ids, include_anomaly=True):
-        X_list, y_list = [], []
-        for mid in machine_ids:
-            normal_dir = os.path.join(dev_data_dir, mid, "normal")
-            anom_dir   = os.path.join(dev_data_dir, mid, "anomaly")
-            for wav in sorted(glob.glob(os.path.join(normal_dir, "*.wav"))):
-                try:
-                    X_list.append(extract_features(wav))
-                    y_list.append(0)
-                except Exception:
-                    pass
-            if include_anomaly and os.path.exists(anom_dir):
-                for wav in sorted(glob.glob(os.path.join(anom_dir, "*.wav"))):
-                    try:
-                        X_list.append(extract_features(wav))
-                        y_list.append(1)
-                    except Exception:
-                        pass
-        return X_list, y_list
-
     print("Loading ToyADMOS/car dataset (DCASE 2020 Task 2)...")
-    print("  Processing train split (IDs 01-03, normal only)...")
-    X_tr, y_tr = collect_split(train_ids, include_anomaly=False)
-    print("  Processing test split (ID 04, normal + anomaly)...")
-    X_te, y_te = collect_split(test_ids, include_anomaly=True)
+
+    # Train: all files in ToyCar/train/ are normal (label=0)
+    print("  Processing train split (ToyCar/train/, all normal)...")
+    train_dir = os.path.join(dev_data_dir, "train")
+    X_tr, y_tr = [], []
+    for wav in sorted(glob.glob(os.path.join(train_dir, "*.wav"))):
+        fname = os.path.basename(wav)
+        if fname.startswith("normal_"):
+            try:
+                X_tr.append(extract_features(wav))
+                y_tr.append(0)
+            except Exception:
+                pass
+
+    # Test: files in ToyCar/test/ labeled by filename prefix
+    print("  Processing test split (ToyCar/test/, normal + anomaly)...")
+    test_dir = os.path.join(dev_data_dir, "test")
+    X_te, y_te = [], []
+    for wav in sorted(glob.glob(os.path.join(test_dir, "*.wav"))):
+        fname = os.path.basename(wav)
+        if fname.startswith("normal_"):
+            label = 0
+        elif fname.startswith("anomaly_"):
+            label = 1
+        else:
+            continue
+        try:
+            X_te.append(extract_features(wav))
+            y_te.append(label)
+        except Exception:
+            pass
 
     X_train = torch.tensor(np.stack(X_tr), dtype=torch.float32)
     y_train = torch.tensor(y_tr, dtype=torch.long)
     X_test  = torch.tensor(np.stack(X_te), dtype=torch.float32)
     y_test  = torch.tensor(y_te, dtype=torch.long)
 
+    # Save to cache
+    print(f"  Saving features to cache: {features_cache}")
+    torch.save({"X_train": X_train, "y_train": y_train,
+                "X_test": X_test, "y_test": y_test}, features_cache)
+
     num_features = X_train.shape[1]  # 640
-    num_classes  = 2
     print(f"toyadmos: {len(X_train)} train (all normal), {len(X_test)} test "
-          f"(normal+anomaly), features={num_features}, classes={num_classes}")
-    return X_train, y_train, X_test, y_test, num_features, num_classes
+          f"(normal+anomaly), features={num_features}, classes=2")
+    return X_train, y_train, X_test, y_test, num_features, 2
 
 
 def _fake_data(args):
