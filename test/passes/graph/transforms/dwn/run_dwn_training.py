@@ -367,6 +367,7 @@ def _load_kws(args):
     Paper config (Table 14): z=8 thermometer bits, hidden=1608, n=6, 100 epochs.
     Uses soundfile for WAV loading (avoids torchcodec dependency in torchaudio 2.10+).
     Downloads ~2.3GB to /data/datasets/speech_commands/.
+    Caches extracted features to kws_features.pt for fast subsequent loads.
     """
     import numpy as np
     import os
@@ -374,6 +375,18 @@ def _load_kws(args):
 
     cache_dir = "/data/datasets/speech_commands"
     os.makedirs(cache_dir, exist_ok=True)
+    features_cache = os.path.join(cache_dir, "kws_features.pt")
+
+    # Return cached features if available
+    if os.path.exists(features_cache):
+        print(f"Loading KWS features from cache: {features_cache}")
+        cached = torch.load(features_cache, map_location="cpu")
+        X_train, y_train = cached["X_train"], cached["y_train"]
+        X_test,  y_test  = cached["X_test"],  cached["y_test"]
+        num_features = X_train.shape[1]
+        print(f"kws: {len(X_train)} train, {len(X_test)} test, "
+              f"features={num_features}, classes=12")
+        return X_train, y_train, X_test, y_test, num_features, 12
 
     try:
         import soundfile as sf
@@ -436,10 +449,8 @@ def _load_kws(args):
         """Load WAV with soundfile, extract MFCC → (490,) float32."""
         data, sr = sf.read(wav_path, dtype="float32")
         waveform = torch.from_numpy(data).unsqueeze(0)  # (1, T)
-        # Resample if needed
         if sr != SAMPLE_RATE:
             waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
-        # Pad/truncate to 1 second
         tgt = SAMPLE_RATE
         if waveform.shape[-1] < tgt:
             waveform = torch.nn.functional.pad(waveform, (0, tgt - waveform.shape[-1]))
@@ -449,24 +460,29 @@ def _load_kws(args):
         return mfcc.squeeze(0).transpose(0, 1).reshape(-1).numpy()  # (490,)
 
     print("Loading Google Speech Commands v2 (MLPerf Tiny KWS)...")
+    print("  Extracting MFCC features (this takes ~35min first time; cached after)...")
 
     X_train_list, y_train_list = [], []
     X_test_list,  y_test_list  = [], []
 
-    # Walk keyword directories
     all_keywords = KEYWORDS + ["_silence_"]
-    other_dirs = [d for d in os.listdir(data_dir)
+    other_dirs = [d for d in sorted(os.listdir(data_dir))
                   if os.path.isdir(os.path.join(data_dir, d))
                   and d not in {"_background_noise_"}
                   and d not in all_keywords]
 
+    # Process keyword directories (all files, no cap)
     for kw in KEYWORDS + ["_silence_"]:
         kw_dir = os.path.join(data_dir, kw)
         if not os.path.isdir(kw_dir):
             continue
         label = LABEL_MAP[kw]
-        for wav_path in sorted(glob.glob(os.path.join(kw_dir, "*.wav"))):
+        wavs = sorted(glob.glob(os.path.join(kw_dir, "*.wav")))
+        for wav_path in wavs:
             rel_path = os.path.relpath(wav_path, data_dir)
+            # Skip validation files entirely (not needed for train or test)
+            if rel_path in val_files:
+                continue
             try:
                 feat = wav_to_features(wav_path)
             except Exception:
@@ -474,30 +490,35 @@ def _load_kws(args):
             if rel_path in test_files:
                 X_test_list.append(feat)
                 y_test_list.append(label)
-            elif rel_path not in val_files:
+            else:
                 X_train_list.append(feat)
                 y_train_list.append(label)
 
-    # "unknown" class from non-keyword dirs
-    unknown_count = 0
-    for d in sorted(other_dirs):
-        for wav_path in sorted(glob.glob(os.path.join(data_dir, d, "*.wav"))):
+    # Process "unknown" class from non-keyword dirs
+    unknown_train_count = 0
+    for d in other_dirs:
+        wavs = sorted(glob.glob(os.path.join(data_dir, d, "*.wav")))
+        for wav_path in wavs:
             rel_path = os.path.relpath(wav_path, data_dir)
+            if rel_path in val_files:
+                continue
+            is_test = rel_path in test_files
+            # For train: skip if already at cap
+            if not is_test and unknown_train_count >= 2000:
+                continue
             try:
                 feat = wav_to_features(wav_path)
             except Exception:
                 continue
-            label = 11  # unknown
-            if rel_path in test_files:
+            if is_test:
                 X_test_list.append(feat)
-                y_test_list.append(label)
-            elif rel_path not in val_files:
+                y_test_list.append(11)
+            else:
                 X_train_list.append(feat)
-                y_train_list.append(label)
-                unknown_count += 1
-                if unknown_count >= 2000:  # cap unknown to avoid imbalance
-                    break
-        if unknown_count >= 2000:
+                y_train_list.append(11)
+                unknown_train_count += 1
+        # Only use 1 dir for unknown test to keep things fast
+        if unknown_train_count >= 2000:
             break
 
     X_train = torch.tensor(np.stack(X_train_list), dtype=torch.float32)
@@ -505,11 +526,15 @@ def _load_kws(args):
     X_test  = torch.tensor(np.stack(X_test_list),  dtype=torch.float32)
     y_test  = torch.tensor(y_test_list,  dtype=torch.long)
 
-    num_classes  = 12
+    # Save to cache
+    print(f"  Saving features to cache: {features_cache}")
+    torch.save({"X_train": X_train, "y_train": y_train,
+                "X_test": X_test, "y_test": y_test}, features_cache)
+
     num_features = X_train.shape[1]  # 490
     print(f"kws: {len(X_train)} train, {len(X_test)} test, "
-          f"features={num_features}, classes={num_classes}")
-    return X_train, y_train, X_test, y_test, num_features, num_classes
+          f"features={num_features}, classes=12")
+    return X_train, y_train, X_test, y_test, num_features, 12
 
 
 def _load_toyadmos(args):
