@@ -89,6 +89,11 @@ TABULAR_DATASETS = [
     "segment", "miniboone", "christine", "jasmine", "sylvine", "blood",
 ]
 
+# Datasets with OpenML aliases (user-facing name → OpenML dataset name)
+DATASET_ALIASES = {
+    "jsc": "hls4ml_lhc_jets_hlf",  # Jet Substructure Classification (7 features, 5 classes)
+}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -134,7 +139,7 @@ def parse_args():
     parser.add_argument("--mapping-first", default="learnable",
                         choices=["learnable", "random", "arange"])
     parser.add_argument("--dataset",       type=str,   default="mnist",
-                        help="Dataset to train on: mnist, fashion_mnist, cifar10, or tabular dataset name "
+                        help="Dataset to train on: mnist, fashion_mnist, cifar10, jsc, nid, or tabular dataset name "
                              "(phoneme, skin-seg, higgs, australian, nomao, segment, miniboone, "
                              "christine, jasmine, sylvine, blood). Default: mnist (fake data unless --real-mnist)")
     parser.add_argument("--real-mnist",    action="store_true",
@@ -166,13 +171,17 @@ def load_data(args):
 
     if dataset in ("mnist", "fashion_mnist", "cifar10"):
         return _load_vision(dataset, args)
-    elif dataset in TABULAR_DATASETS:
-        result = _load_tabular(dataset, args)
+    elif dataset == "nid":
+        result = _load_nid(args)
+        return result + (None,)
+    elif dataset in TABULAR_DATASETS or dataset in DATASET_ALIASES:
+        openml_name = DATASET_ALIASES.get(dataset, dataset)
+        result = _load_tabular(openml_name, args)
         return result + (None,)
     else:
         raise ValueError(
             f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, cifar10, "
-            f"{', '.join(TABULAR_DATASETS)}"
+            f"jsc, nid, {', '.join(TABULAR_DATASETS)}"
         )
 
 
@@ -254,6 +263,94 @@ def _load_tabular(dataset_name, args):
     input_features = X_train.shape[1]
     print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, "
           f"features={input_features}, classes={num_classes}")
+    return X_train, y_train, X_test, y_test, input_features, num_classes
+
+
+def _load_nid(args):
+    """Load NSL-KDD Network Intrusion Detection dataset.
+
+    Downloads KDDTrain+.txt and KDDTest+.txt from the ISCX repository
+    if not already cached. 41 features, 5 classes (normal + 4 attack types).
+    """
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import LabelEncoder
+    import os, urllib.request
+    import pandas as pd
+
+    cache_dir = os.path.expanduser("~/.cache/nsl-kdd")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    train_url = "https://raw.githubusercontent.com/defcom17/NSL_KDD/master/KDDTrain+.txt"
+    test_url  = "https://raw.githubusercontent.com/defcom17/NSL_KDD/master/KDDTest+.txt"
+    train_path = os.path.join(cache_dir, "KDDTrain+.txt")
+    test_path  = os.path.join(cache_dir, "KDDTest+.txt")
+
+    for url, path in [(train_url, train_path), (test_url, test_path)]:
+        if not os.path.exists(path):
+            print(f"Downloading NSL-KDD from {url}...")
+            urllib.request.urlretrieve(url, path)
+
+    col_names = [
+        "duration", "protocol_type", "service", "flag", "src_bytes", "dst_bytes",
+        "land", "wrong_fragment", "urgent", "hot", "num_failed_logins", "logged_in",
+        "num_compromised", "root_shell", "su_attempted", "num_root", "num_file_creations",
+        "num_shells", "num_access_files", "num_outbound_cmds", "is_host_login",
+        "is_guest_login", "count", "srv_count", "serror_rate", "srv_serror_rate",
+        "rerror_rate", "srv_rerror_rate", "same_srv_rate", "diff_srv_rate",
+        "srv_diff_host_rate", "dst_host_count", "dst_host_srv_count",
+        "dst_host_same_srv_rate", "dst_host_diff_srv_rate", "dst_host_same_src_port_rate",
+        "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
+        "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "class", "difficulty"
+    ]
+
+    df_train = pd.read_csv(train_path, header=None, names=col_names)
+    df_test  = pd.read_csv(test_path,  header=None, names=col_names)
+
+    df_train = df_train.drop("difficulty", axis=1)
+    df_test  = df_test.drop("difficulty", axis=1)
+
+    cat_cols = ["protocol_type", "service", "flag"]
+    df_all = pd.concat([df_train, df_test], axis=0)
+    df_all = pd.get_dummies(df_all, columns=cat_cols)
+    df_train2 = df_all.iloc[:len(df_train)]
+    df_test2  = df_all.iloc[len(df_train):]
+
+    attack_map = {
+        "normal": "normal",
+        "neptune": "dos", "back": "dos", "land": "dos", "pod": "dos",
+        "smurf": "dos", "teardrop": "dos", "mailbomb": "dos", "apache2": "dos",
+        "processtable": "dos", "udpstorm": "dos",
+        "ipsweep": "probe", "nmap": "probe", "portsweep": "probe", "satan": "probe",
+        "mscan": "probe", "saint": "probe",
+        "ftp_write": "r2l", "guess_passwd": "r2l", "imap": "r2l", "multihop": "r2l",
+        "phf": "r2l", "spy": "r2l", "warezclient": "r2l", "warezmaster": "r2l",
+        "sendmail": "r2l", "named": "r2l", "snmpgetattack": "r2l", "snmpguess": "r2l",
+        "xlock": "r2l", "xsnoop": "r2l", "httptunnel": "r2l",
+        "buffer_overflow": "u2r", "loadmodule": "u2r", "perl": "u2r", "rootkit": "u2r",
+        "ps": "u2r", "sqlattack": "u2r", "xterm": "u2r",
+    }
+
+    y_train_raw = df_train2["class"].map(lambda x: attack_map.get(x, "other"))
+    y_test_raw  = df_test2["class"].map(lambda x: attack_map.get(x, "other"))
+
+    X_train_np = df_train2.drop("class", axis=1).values.astype(np.float32)
+    X_test_np  = df_test2.drop("class", axis=1).values.astype(np.float32)
+
+    le = LabelEncoder()
+    le.fit(pd.concat([y_train_raw, y_test_raw]))
+    y_train_np = le.transform(y_train_raw).astype(np.int64)
+    y_test_np  = le.transform(y_test_raw).astype(np.int64)
+
+    X_train = torch.tensor(X_train_np)
+    y_train = torch.tensor(y_train_np, dtype=torch.long)
+    X_test  = torch.tensor(X_test_np)
+    y_test  = torch.tensor(y_test_np, dtype=torch.long)
+
+    num_classes = len(le.classes_)
+    input_features = X_train.shape[1]
+    print(f"nid (NSL-KDD): {len(X_train)} train, {len(X_test)} test, "
+          f"features={input_features}, classes={num_classes} {list(le.classes_)}")
     return X_train, y_train, X_test, y_test, input_features, num_classes
 
 
