@@ -77,7 +77,7 @@ def parse_args():
     parser.add_argument("--lr-gamma",     type=float, default=0.1)
     parser.add_argument("--batch-size",   type=int,   default=128)
     parser.add_argument("--dataset",      type=str,   default="mnist",
-                        choices=["mnist", "cifar10"],
+                        choices=["mnist", "cifar10", "jsc", "nid"],
                         help="Dataset to train on")
     parser.add_argument("--remove-border", action="store_true", default=True,
                         help="Remove MNIST border (28x28 -> 20x20 = 400 features, "
@@ -108,6 +108,10 @@ def load_data(args):
         return _load_mnist(args)
     elif args.dataset == "cifar10":
         return _load_cifar10(args)
+    elif args.dataset == "jsc":
+        return _load_jsc(args)
+    elif args.dataset == "nid":
+        return _load_nid(args)
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
 
@@ -176,6 +180,155 @@ def _load_cifar10(args):
 
     print(f"cifar10: {len(X_train)} train, {len(X_test)} test, features={input_features}, classes=10")
     return X_train, y_train, X_test, y_test, input_features, 10
+
+
+def _load_jsc(args):
+    """Load hls4ml jet substructure classification (JSC) dataset from OpenML.
+
+    Fetches 'hls4ml_lhc_jets_hlf' (version 1) via scikit-learn's fetch_openml.
+    Features are already continuous; MinMaxScaler maps them to [0, 1] as
+    required by DiffLogic's continuous-relaxation gates.
+    Splits 80/20 stratified.  Typical shape: ~830k samples, 16 features, 5 classes.
+    """
+    try:
+        from sklearn.datasets import fetch_openml
+        from sklearn.model_selection import train_test_split
+        from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+        import numpy as np
+    except ImportError:
+        raise ImportError("scikit-learn is required for JSC: pip install scikit-learn")
+
+    print("Fetching hls4ml_lhc_jets_hlf from OpenML...")
+    data = fetch_openml(name="hls4ml_lhc_jets_hlf", version=1, as_frame=False, parser="auto")
+    X = data.data.astype(np.float32)
+    y_raw = data.target
+
+    le = LabelEncoder()
+    y = le.fit_transform(y_raw).astype(np.int64)
+    num_classes = len(le.classes_)
+
+    X_train_np, X_test_np, y_train_np, y_test_np = train_test_split(
+        X, y, test_size=0.2, random_state=args.seed, stratify=y
+    )
+
+    # Normalize to [0, 1] — required for DiffLogic continuous gates
+    scaler = MinMaxScaler()
+    X_train_np = scaler.fit_transform(X_train_np).astype(np.float32)
+    X_test_np  = scaler.transform(X_test_np).astype(np.float32)
+
+    X_train = torch.tensor(X_train_np)
+    y_train = torch.tensor(y_train_np, dtype=torch.long)
+    X_test  = torch.tensor(X_test_np)
+    y_test  = torch.tensor(y_test_np, dtype=torch.long)
+
+    input_features = X_train.shape[1]
+    print(f"jsc: {len(X_train)} train, {len(X_test)} test, "
+          f"features={input_features}, classes={num_classes} {list(le.classes_)}")
+    return X_train, y_train, X_test, y_test, input_features, num_classes
+
+
+def _load_nid(args):
+    """Load NSL-KDD Network Intrusion Detection dataset.
+
+    Downloads KDDTrain+.txt and KDDTest+.txt from GitHub if not cached.
+    Categorical columns (protocol_type, service, flag) are one-hot encoded.
+    Labels are mapped to 5 coarse classes: normal, dos, probe, r2l, u2r.
+    All features are MinMax-scaled to [0, 1] for DiffLogic.
+    Typical shape after encoding: ~125k train / ~22k test, ~122 features, 5 classes.
+    """
+    import numpy as np
+    import os
+    import urllib.request
+
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ImportError("pandas is required for NID: pip install pandas")
+    try:
+        from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+    except ImportError:
+        raise ImportError("scikit-learn is required for NID: pip install scikit-learn")
+
+    cache_dir = os.path.expanduser("~/.cache/nsl-kdd")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    train_url  = "https://raw.githubusercontent.com/defcom17/NSL_KDD/master/KDDTrain+.txt"
+    test_url   = "https://raw.githubusercontent.com/defcom17/NSL_KDD/master/KDDTest+.txt"
+    train_path = os.path.join(cache_dir, "KDDTrain+.txt")
+    test_path  = os.path.join(cache_dir, "KDDTest+.txt")
+
+    for url, path in [(train_url, train_path), (test_url, test_path)]:
+        if not os.path.exists(path):
+            print(f"Downloading NSL-KDD from {url}...")
+            urllib.request.urlretrieve(url, path)
+
+    col_names = [
+        "duration", "protocol_type", "service", "flag", "src_bytes", "dst_bytes",
+        "land", "wrong_fragment", "urgent", "hot", "num_failed_logins", "logged_in",
+        "num_compromised", "root_shell", "su_attempted", "num_root", "num_file_creations",
+        "num_shells", "num_access_files", "num_outbound_cmds", "is_host_login",
+        "is_guest_login", "count", "srv_count", "serror_rate", "srv_serror_rate",
+        "rerror_rate", "srv_rerror_rate", "same_srv_rate", "diff_srv_rate",
+        "srv_diff_host_rate", "dst_host_count", "dst_host_srv_count",
+        "dst_host_same_srv_rate", "dst_host_diff_srv_rate", "dst_host_same_src_port_rate",
+        "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
+        "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "class", "difficulty",
+    ]
+
+    df_train = pd.read_csv(train_path, header=None, names=col_names)
+    df_test  = pd.read_csv(test_path,  header=None, names=col_names)
+
+    df_train = df_train.drop("difficulty", axis=1)
+    df_test  = df_test.drop("difficulty", axis=1)
+
+    # One-hot encode categorical columns jointly so both splits share the same schema
+    cat_cols = ["protocol_type", "service", "flag"]
+    df_all  = pd.concat([df_train, df_test], axis=0)
+    df_all  = pd.get_dummies(df_all, columns=cat_cols)
+    df_train2 = df_all.iloc[:len(df_train)]
+    df_test2  = df_all.iloc[len(df_train):]
+
+    attack_map = {
+        "normal": "normal",
+        "neptune": "dos", "back": "dos", "land": "dos", "pod": "dos",
+        "smurf": "dos", "teardrop": "dos", "mailbomb": "dos", "apache2": "dos",
+        "processtable": "dos", "udpstorm": "dos",
+        "ipsweep": "probe", "nmap": "probe", "portsweep": "probe", "satan": "probe",
+        "mscan": "probe", "saint": "probe",
+        "ftp_write": "r2l", "guess_passwd": "r2l", "imap": "r2l", "multihop": "r2l",
+        "phf": "r2l", "spy": "r2l", "warezclient": "r2l", "warezmaster": "r2l",
+        "sendmail": "r2l", "named": "r2l", "snmpgetattack": "r2l", "snmpguess": "r2l",
+        "xlock": "r2l", "xsnoop": "r2l", "httptunnel": "r2l",
+        "buffer_overflow": "u2r", "loadmodule": "u2r", "perl": "u2r", "rootkit": "u2r",
+        "ps": "u2r", "sqlattack": "u2r", "xterm": "u2r",
+    }
+
+    y_train_raw = df_train2["class"].map(lambda x: attack_map.get(x, "other"))
+    y_test_raw  = df_test2["class"].map(lambda x: attack_map.get(x, "other"))
+
+    X_train_np = df_train2.drop("class", axis=1).values.astype(np.float32)
+    X_test_np  = df_test2.drop("class", axis=1).values.astype(np.float32)
+
+    le = LabelEncoder()
+    le.fit(pd.concat([y_train_raw, y_test_raw]))
+    y_train_np = le.transform(y_train_raw).astype(np.int64)
+    y_test_np  = le.transform(y_test_raw).astype(np.int64)
+
+    # Normalize to [0, 1] — required for DiffLogic continuous gates
+    scaler = MinMaxScaler()
+    X_train_np = scaler.fit_transform(X_train_np).astype(np.float32)
+    X_test_np  = scaler.transform(X_test_np).astype(np.float32)
+
+    X_train = torch.tensor(X_train_np)
+    y_train = torch.tensor(y_train_np, dtype=torch.long)
+    X_test  = torch.tensor(X_test_np)
+    y_test  = torch.tensor(y_test_np, dtype=torch.long)
+
+    num_classes = len(le.classes_)
+    input_features = X_train.shape[1]
+    print(f"nid (NSL-KDD): {len(X_train)} train, {len(X_test)} test, "
+          f"features={input_features}, classes={num_classes} {list(le.classes_)}")
+    return X_train, y_train, X_test, y_test, input_features, num_classes
 
 
 # ---------------------------------------------------------------------------

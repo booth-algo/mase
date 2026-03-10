@@ -192,27 +192,28 @@ def load_data(args):
 
 
 def _load_vision(dataset_name, args):
+    import numpy as np
+    import os
+
+    if dataset_name in ("mnist", "fashion_mnist"):
+        return _load_mnist_openml(dataset_name, args)
+
+    # CIFAR-10: still uses torchvision
     try:
         from torchvision import datasets as tvdatasets, transforms
-    except ImportError:
-        print("torchvision not available; falling back to fake data")
-        return _fake_data(args)
+    except Exception as e:
+        raise RuntimeError(
+            f"torchvision required for cifar10 but import failed: {e}"
+        )
 
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Lambda(lambda x: x.view(-1)),
     ])
-    if dataset_name == "mnist":
-        cls = tvdatasets.MNIST
-        num_features = 784
-    elif dataset_name == "fashion_mnist":
-        cls = tvdatasets.FashionMNIST
-        num_features = 784
-    elif dataset_name == "cifar10":
-        cls = tvdatasets.CIFAR10
-        num_features = 3072
+    num_features = 3072
+    cls = tvdatasets.CIFAR10
     cache = f"~/.cache/{dataset_name}"
-    if dataset_name == "cifar10" and getattr(args, "augment", False):
+    if getattr(args, "augment", False):
         train_transform = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
@@ -230,13 +231,67 @@ def _load_vision(dataset_name, args):
 
     # When --augment-refit is set, also load unaugmented X_train for thermometer fitting
     X_train_base = None
-    if dataset_name == "cifar10" and getattr(args, "augment", False) and getattr(args, "augment_refit", False):
+    if getattr(args, "augment", False) and getattr(args, "augment_refit", False):
         print("augment-refit: loading unaugmented X_train for thermometer fitting...")
         base_ds = cls(cache, train=True, download=False, transform=transform)
         X_train_base = torch.stack([x for x, _ in base_ds])
 
     print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, features={num_features}, classes=10")
     return X_train, y_train, X_test, y_test, num_features, 10, X_train_base
+
+
+def _load_mnist_openml(dataset_name, args):
+    """Load MNIST or FashionMNIST via sklearn fetch_openml (avoids torchvision).
+
+    Caches numpy arrays to /data/datasets/{mnist,fashion_mnist}/*_features.pt.
+    Standard split: first 60,000 = train, last 10,000 = test.
+    Pixel values normalised to [0, 1] by dividing by 255.
+    """
+    import numpy as np
+    import os
+    from sklearn.datasets import fetch_openml
+
+    if dataset_name == "mnist":
+        openml_name = "mnist_784"
+        cache_dir = "/data/datasets/mnist"
+        cache_file = os.path.join(cache_dir, "mnist_features.pt")
+    else:
+        openml_name = "Fashion-MNIST"
+        cache_dir = "/data/datasets/fashion_mnist"
+        cache_file = os.path.join(cache_dir, "fashion_mnist_features.pt")
+
+    os.makedirs(cache_dir, exist_ok=True)
+
+    if os.path.exists(cache_file):
+        print(f"Loading {dataset_name} features from cache: {cache_file}")
+        cached = torch.load(cache_file, map_location="cpu")
+        X_all, y_all = cached["X"], cached["y"]
+    else:
+        print(f"Fetching {openml_name} from OpenML (one-time download)...")
+        data = fetch_openml(openml_name, version=1, as_frame=False, parser="auto")
+        X_all = data.data.astype(np.float32) / 255.0
+        # Labels may be strings ("0".."9"); convert to int
+        y_raw = data.target
+        if y_raw.dtype.kind in ("U", "S", "O"):
+            y_all = y_raw.astype(np.int64)
+        else:
+            y_all = y_raw.astype(np.int64)
+        torch.save({"X": torch.tensor(X_all), "y": torch.tensor(y_all, dtype=torch.long)}, cache_file)
+        print(f"Cached to {cache_file}")
+        X_all = torch.tensor(X_all)
+        y_all = torch.tensor(y_all, dtype=torch.long)
+
+    if not isinstance(X_all, torch.Tensor):
+        X_all = torch.tensor(X_all)
+    if not isinstance(y_all, torch.Tensor):
+        y_all = torch.tensor(y_all, dtype=torch.long)
+
+    # Standard MNIST split: first 60k train, last 10k test
+    X_train, y_train = X_all[:60000], y_all[:60000]
+    X_test,  y_test  = X_all[60000:], y_all[60000:]
+
+    print(f"{dataset_name}: {len(X_train)} train, {len(X_test)} test, features=784, classes=10")
+    return X_train, y_train, X_test, y_test, 784, 10, None
 
 
 def _load_tabular(dataset_name, args):
