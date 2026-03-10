@@ -105,13 +105,15 @@ def emit_network_blif(model, output_path) -> None:
                 # Output wire name
                 out_wire = f"l{layer_idx}_out_{neuron_i}"
 
-                f.write(f".names {' '.join(in_wires)} {out_wire}\n")
-
-                # On-set entries: rows where lut_contents[neuron_i, j] == 1
                 lut_row = lut_contents[neuron_i]  # shape (2^n,)
-                for j in range(2 ** n):
-                    if int(lut_row[j]) == 1:
-                        # Binary address: j encoded in n bits, MSB = input 0
+                on_set = [j for j in range(2 ** n) if int(lut_row[j]) == 1]
+
+                if not on_set:
+                    # Constant-0: emit with no fanins (valid BLIF for const-0)
+                    f.write(f".names {out_wire}\n")
+                else:
+                    f.write(f".names {' '.join(in_wires)} {out_wire}\n")
+                    for j in on_set:
                         bits = format(j, f"0{n}b")
                         f.write(f"{bits} 1\n")
 
