@@ -12,10 +12,10 @@
 template <typename T> T ceil_div(const T x, const T y) { return x / y + !!(x % y); }
 
 __global__ void efd_cuda_forward_kernel(
-    const torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> input,    // (batch_size, input_lenght)
-    const torch::PackedTensorAccessor32<int, 2, torch::RestrictPtrTraits> mapping,    // (num_luts, n)
-    const torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> luts,     // (num_luts, 2^n)
-    torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> output) {       // (batch_size, num_luts)
+    const torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> input,    // (batch_size, input_lenght)
+    const torch::PackedTensorAccessor64<int, 2, torch::RestrictPtrTraits> mapping,    // (num_luts, n)
+    const torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> luts,     // (num_luts, 2^n)
+    torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> output) {       // (batch_size, num_luts)
 
     const int batch_size = output.size(0);
     const int num_luts = output.size(1);
@@ -53,10 +53,10 @@ torch::Tensor efd_cuda_forward(
     );
 
     efd_cuda_forward_kernel<<<blocks_per_grid, threads_per_block>>>(
-        input_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
-        mapping_tensor.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        luts_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
-        output_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>()
+        input_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
+        mapping_tensor.packed_accessor64<int, 2, torch::RestrictPtrTraits>(),
+        luts_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
+        output_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>()
     );
 
     cudaDeviceSynchronize();
@@ -65,14 +65,14 @@ torch::Tensor efd_cuda_forward(
 };
 
 __global__ void efd_cuda_backward_kernel(
-    const torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> input,          // (batch_size, input_lenght)
-    const torch::PackedTensorAccessor32<int, 2, torch::RestrictPtrTraits> mapping,          // (num_luts, n)
-    const torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> luts,           // (num_luts, 2^n)
+    const torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> input,          // (batch_size, input_lenght)
+    const torch::PackedTensorAccessor64<int, 2, torch::RestrictPtrTraits> mapping,          // (num_luts, n)
+    const torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> luts,           // (num_luts, 2^n)
     const float alpha,
     const float beta,
-    const torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> output_grad,    // (batch_size, num_luts)
-    torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> input_grad,           // (batch_size, input_lenght)
-    torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> luts_grad) {          // (num_luts, 2^n)
+    const torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> output_grad,    // (batch_size, num_luts)
+    torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> input_grad,           // (batch_size, input_lenght)
+    torch::PackedTensorAccessor64<float, 2, torch::RestrictPtrTraits> luts_grad) {          // (num_luts, 2^n)
 
 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < output_grad.size(0); i += blockDim.x * gridDim.x) {
@@ -125,14 +125,14 @@ std::vector<torch::Tensor> efd_cuda_backward(
     );
 
     efd_cuda_backward_kernel<<<blocks_per_grid, threads_per_block>>>(
-        input_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
-        mapping_tensor.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        luts_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
+        input_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
+        mapping_tensor.packed_accessor64<int, 2, torch::RestrictPtrTraits>(),
+        luts_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
         alpha,
         beta,
-        output_grad_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
-        input_grad_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
-        luts_grad_tensor.packed_accessor32<float, 2, torch::RestrictPtrTraits>()
+        output_grad_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
+        input_grad_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
+        luts_grad_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>()
     );
 
     cudaDeviceSynchronize();
