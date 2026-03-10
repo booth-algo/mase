@@ -117,43 +117,55 @@ def load_data(args):
 
 
 def _load_mnist(args):
+    """Load MNIST via OpenML (avoids torchvision dependency).
+
+    Uses sklearn fetch_openml for mnist_784, then applies the same border-removal
+    crop (28x28 → 20x20 = 400 features) as the DiffLogic paper if --remove-border.
+    Results cached to /data/datasets/mnist/ or ~/.cache/mnist/.
+    """
+    import os
+    import numpy as np
     try:
-        from torchvision import datasets as tvdatasets, transforms
+        from sklearn.datasets import fetch_openml
     except ImportError:
-        raise ImportError("torchvision is required: pip install torchvision")
+        raise ImportError("scikit-learn is required for MNIST: pip install scikit-learn")
+
+    cache_dir = "/data/datasets/mnist" if os.path.isdir("/data/datasets") else os.path.expanduser("~/.cache/mnist")
+    os.makedirs(cache_dir, exist_ok=True)
+    suffix = "border" if args.remove_border else "full"
+    cache_path = os.path.join(cache_dir, f"mnist_{suffix}.pt")
+
+    if os.path.exists(cache_path):
+        print(f"Loading MNIST from cache: {cache_path}")
+        data = torch.load(cache_path, weights_only=True)
+        return data["X_train"], data["y_train"], data["X_test"], data["y_test"], int(data["input_features"]), 10
+
+    print("Fetching mnist_784 from OpenML...")
+    dataset = fetch_openml("mnist_784", version=1, as_frame=False, parser="auto")
+    X = dataset.data.astype(np.float32) / 255.0   # [70000, 784]
+    y = dataset.target.astype(np.int64)
+
+    # Standard MNIST split: first 60k train, last 10k test
+    X_train_np, y_train_np = X[:60000], y[:60000]
+    X_test_np,  y_test_np  = X[60000:], y[60000:]
 
     if args.remove_border:
-        # Use the DiffLogic paper's border-removal: 28x28 -> 20x20 = 400 features
-        # We implement a simplified version here rather than importing mnist_data.py
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-        ])
-        cache = "~/.cache/mnist"
-        train_ds = tvdatasets.MNIST(cache, train=True,  download=True, transform=transform)
-        test_ds  = tvdatasets.MNIST(cache, train=False, download=True, transform=transform)
-
-        def remove_border_tensor(img_tensor):
-            """Remove 4 pixels from each border: 28x28 -> 20x20."""
-            return img_tensor[:, 4:24, 4:24]
-
-        X_train = torch.stack([remove_border_tensor(x).view(-1) for x, _ in train_ds])
-        y_train = torch.tensor([y for _, y in train_ds])
-        X_test  = torch.stack([remove_border_tensor(x).view(-1) for x, _ in test_ds])
-        y_test  = torch.tensor([y for _, y in test_ds])
+        # Remove 4-pixel border: 28x28 → crop [4:24, 4:24] = 20x20 = 400 features
+        X_train_np = X_train_np.reshape(-1, 28, 28)[:, 4:24, 4:24].reshape(-1, 400)
+        X_test_np  = X_test_np.reshape(-1, 28, 28)[:, 4:24, 4:24].reshape(-1, 400)
         input_features = 400
     else:
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x.view(-1)),
-        ])
-        cache = "~/.cache/mnist"
-        train_ds = tvdatasets.MNIST(cache, train=True,  download=True, transform=transform)
-        test_ds  = tvdatasets.MNIST(cache, train=False, download=True, transform=transform)
-        X_train = torch.stack([x for x, _ in train_ds])
-        y_train = torch.tensor([y for _, y in train_ds])
-        X_test  = torch.stack([x for x, _ in test_ds])
-        y_test  = torch.tensor([y for _, y in test_ds])
         input_features = 784
+
+    X_train = torch.tensor(X_train_np)
+    y_train = torch.tensor(y_train_np, dtype=torch.long)
+    X_test  = torch.tensor(X_test_np)
+    y_test  = torch.tensor(y_test_np, dtype=torch.long)
+
+    torch.save({"X_train": X_train, "y_train": y_train,
+                "X_test": X_test,   "y_test": y_test,
+                "input_features": input_features}, cache_path)
+    print(f"MNIST cached to: {cache_path}")
 
     print(f"mnist: {len(X_train)} train, {len(X_test)} test, features={input_features}, classes=10")
     return X_train, y_train, X_test, y_test, input_features, 10
