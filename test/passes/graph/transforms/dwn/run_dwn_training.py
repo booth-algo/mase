@@ -139,9 +139,9 @@ def parse_args():
     parser.add_argument("--mapping-first", default="learnable",
                         choices=["learnable", "random", "arange"])
     parser.add_argument("--dataset",       type=str,   default="mnist",
-                        help="Dataset to train on: mnist, fashion_mnist, cifar10, jsc, nid, or tabular dataset name "
-                             "(phoneme, skin-seg, higgs, australian, nomao, segment, miniboone, "
-                             "christine, jasmine, sylvine, blood). Default: mnist (fake data unless --real-mnist)")
+                        help="Dataset to train on: mnist, fashion_mnist, cifar10, jsc, nid, kws, toyadmos, "
+                             "or tabular dataset name (phoneme, skin-seg, higgs, australian, nomao, segment, "
+                             "miniboone, christine, jasmine, sylvine, blood). Default: mnist")
     parser.add_argument("--real-mnist",    action="store_true",
                         help="(Deprecated) Use --dataset mnist. Equivalent to --dataset mnist with real data.")
     parser.add_argument("--n-train",       type=int,   default=640,
@@ -174,6 +174,12 @@ def load_data(args):
     elif dataset == "nid":
         result = _load_nid(args)
         return result + (None,)
+    elif dataset == "kws":
+        result = _load_kws(args)
+        return result + (None,)
+    elif dataset == "toyadmos":
+        result = _load_toyadmos(args)
+        return result + (None,)
     elif dataset in TABULAR_DATASETS or dataset in DATASET_ALIASES:
         openml_name = DATASET_ALIASES.get(dataset, dataset)
         result = _load_tabular(openml_name, args)
@@ -181,7 +187,7 @@ def load_data(args):
     else:
         raise ValueError(
             f"Unknown dataset: {dataset!r}. Choose from: mnist, fashion_mnist, cifar10, "
-            f"jsc, nid, {', '.join(TABULAR_DATASETS)}"
+            f"jsc, nid, kws, toyadmos, {', '.join(TABULAR_DATASETS)}"
         )
 
 
@@ -352,6 +358,272 @@ def _load_nid(args):
     print(f"nid (NSL-KDD): {len(X_train)} train, {len(X_test)} test, "
           f"features={input_features}, classes={num_classes} {list(le.classes_)}")
     return X_train, y_train, X_test, y_test, input_features, num_classes
+
+
+def _load_kws(args):
+    """Load Google Speech Commands v2 (MLPerf Tiny KWS subset, 12 classes).
+
+    Features: 49 frames × 10 MFCC coefficients = 490 input features.
+    Paper config (Table 14): z=8 thermometer bits, hidden=1608, n=6, 100 epochs.
+    Uses soundfile for WAV loading (avoids torchcodec dependency in torchaudio 2.10+).
+    Downloads ~2.3GB to /data/datasets/speech_commands/.
+    """
+    import numpy as np
+    import os
+    import glob
+
+    cache_dir = "/data/datasets/speech_commands"
+    os.makedirs(cache_dir, exist_ok=True)
+
+    try:
+        import soundfile as sf
+    except ImportError:
+        raise ImportError("soundfile is required for KWS: pip install soundfile")
+
+    try:
+        import torchaudio
+        import torchaudio.transforms as T
+    except ImportError:
+        raise ImportError("torchaudio is required for KWS: pip install torchaudio")
+
+    # Download if needed
+    data_dir = os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02")
+    if not os.path.exists(data_dir):
+        print(f"Downloading Google Speech Commands v2 (~2.3GB) to {cache_dir}...")
+        import urllib.request, tarfile
+        url = "http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"
+        tar_path = os.path.join(cache_dir, "speech_commands_v0.02.tar.gz")
+        os.makedirs(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"), exist_ok=True)
+        urllib.request.urlretrieve(url, tar_path)
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"))
+
+    # MLPerf Tiny KWS spec: 30ms window, 20ms stride, 10 MFCC, 40 mel bins
+    SAMPLE_RATE = 16000
+    N_MFCC = 10
+    N_MELS = 40
+    WIN_LEN = int(0.030 * SAMPLE_RATE)   # 480 samples
+    HOP_LEN = int(0.020 * SAMPLE_RATE)   # 320 samples
+
+    KEYWORDS = ["yes", "no", "up", "down", "left", "right",
+                "on", "off", "stop", "go"]
+    LABEL_MAP = {w: i for i, w in enumerate(KEYWORDS)}
+    LABEL_MAP["_silence_"] = 10
+    # unknown = 11
+
+    mfcc_transform = T.MFCC(
+        sample_rate=SAMPLE_RATE,
+        n_mfcc=N_MFCC,
+        melkwargs={
+            "n_mels": N_MELS,
+            "win_length": WIN_LEN,
+            "hop_length": HOP_LEN,
+            "n_fft": 1024,
+            "f_min": 20.0,
+            "f_max": 4000.0,
+        },
+    )
+
+    # Load split lists
+    test_list_path = os.path.join(data_dir, "testing_list.txt")
+    val_list_path  = os.path.join(data_dir, "validation_list.txt")
+    with open(test_list_path) as f:
+        test_files = set(line.strip() for line in f)
+    with open(val_list_path) as f:
+        val_files = set(line.strip() for line in f)
+
+    def wav_to_features(wav_path):
+        """Load WAV with soundfile, extract MFCC → (490,) float32."""
+        data, sr = sf.read(wav_path, dtype="float32")
+        waveform = torch.from_numpy(data).unsqueeze(0)  # (1, T)
+        # Resample if needed
+        if sr != SAMPLE_RATE:
+            waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
+        # Pad/truncate to 1 second
+        tgt = SAMPLE_RATE
+        if waveform.shape[-1] < tgt:
+            waveform = torch.nn.functional.pad(waveform, (0, tgt - waveform.shape[-1]))
+        else:
+            waveform = waveform[..., :tgt]
+        mfcc = mfcc_transform(waveform)  # (1, 10, 49)
+        return mfcc.squeeze(0).transpose(0, 1).reshape(-1).numpy()  # (490,)
+
+    print("Loading Google Speech Commands v2 (MLPerf Tiny KWS)...")
+
+    X_train_list, y_train_list = [], []
+    X_test_list,  y_test_list  = [], []
+
+    # Walk keyword directories
+    all_keywords = KEYWORDS + ["_silence_"]
+    other_dirs = [d for d in os.listdir(data_dir)
+                  if os.path.isdir(os.path.join(data_dir, d))
+                  and d not in {"_background_noise_"}
+                  and d not in all_keywords]
+
+    for kw in KEYWORDS + ["_silence_"]:
+        kw_dir = os.path.join(data_dir, kw)
+        if not os.path.isdir(kw_dir):
+            continue
+        label = LABEL_MAP[kw]
+        for wav_path in sorted(glob.glob(os.path.join(kw_dir, "*.wav"))):
+            rel_path = os.path.relpath(wav_path, data_dir)
+            try:
+                feat = wav_to_features(wav_path)
+            except Exception:
+                continue
+            if rel_path in test_files:
+                X_test_list.append(feat)
+                y_test_list.append(label)
+            elif rel_path not in val_files:
+                X_train_list.append(feat)
+                y_train_list.append(label)
+
+    # "unknown" class from non-keyword dirs
+    unknown_count = 0
+    for d in sorted(other_dirs):
+        for wav_path in sorted(glob.glob(os.path.join(data_dir, d, "*.wav"))):
+            rel_path = os.path.relpath(wav_path, data_dir)
+            try:
+                feat = wav_to_features(wav_path)
+            except Exception:
+                continue
+            label = 11  # unknown
+            if rel_path in test_files:
+                X_test_list.append(feat)
+                y_test_list.append(label)
+            elif rel_path not in val_files:
+                X_train_list.append(feat)
+                y_train_list.append(label)
+                unknown_count += 1
+                if unknown_count >= 2000:  # cap unknown to avoid imbalance
+                    break
+        if unknown_count >= 2000:
+            break
+
+    X_train = torch.tensor(np.stack(X_train_list), dtype=torch.float32)
+    y_train = torch.tensor(y_train_list, dtype=torch.long)
+    X_test  = torch.tensor(np.stack(X_test_list),  dtype=torch.float32)
+    y_test  = torch.tensor(y_test_list,  dtype=torch.long)
+
+    num_classes  = 12
+    num_features = X_train.shape[1]  # 490
+    print(f"kws: {len(X_train)} train, {len(X_test)} test, "
+          f"features={num_features}, classes={num_classes}")
+    return X_train, y_train, X_test, y_test, num_features, num_classes
+
+
+def _load_toyadmos(args):
+    """Load DCASE 2020 Task 2 ToyCar anomaly detection dataset.
+
+    Binary classification: normal (0) vs anomalous (1).
+    Features: log-mel spectrogram, 128 mel bins × 5 consecutive frames = 640 features.
+    Paper config (Table 14): z=3 therm. bits, hidden=[1800,1800], n=6, 100 epochs.
+    Downloads ~1.8GB to /data/toyadmos/.
+
+    Dev set: normal/anomaly clips for machine IDs 01-04.
+    Train on normal from IDs 01-03, test on both from ID 04 (like MLPerf Tiny split).
+    """
+    import numpy as np
+    import os
+    import urllib.request
+    import zipfile
+    import glob
+
+    cache_dir = "/data/datasets/toyadmos"
+    os.makedirs(cache_dir, exist_ok=True)
+
+    try:
+        import torchaudio
+        import torchaudio.transforms as T
+    except ImportError:
+        raise ImportError(
+            "torchaudio is required for ToyADMOS: "
+            "conda run -n plena2 pip install torchaudio"
+        )
+
+    # DCASE 2020 Task 2 ToyCar dev dataset (1.8 GB)
+    DEV_ZIP_URL = "https://zenodo.org/record/3678171/files/dev_data_ToyCar.zip"
+    dev_zip_path = os.path.join(cache_dir, "dev_data_ToyCar.zip")
+    dev_data_dir = os.path.join(cache_dir, "dev_data_ToyCar")
+
+    if not os.path.exists(dev_data_dir):
+        if not os.path.exists(dev_zip_path):
+            print(f"Downloading ToyADMOS/car dev set (~1.8GB) to {cache_dir}...")
+            urllib.request.urlretrieve(DEV_ZIP_URL, dev_zip_path)
+            print("  Download complete.")
+        print("  Extracting...")
+        with zipfile.ZipFile(dev_zip_path, "r") as zf:
+            zf.extractall(cache_dir)
+
+    # MLPerf Tiny anomaly detection spec: 128 mel, 5 frames, 1024 FFT, 512 hop
+    SAMPLE_RATE = 16000
+    N_MELS = 128
+    N_FRAMES = 5
+    N_FFT = 1024
+    HOP_LEN = 512
+
+    mel_transform = T.MelSpectrogram(
+        sample_rate=SAMPLE_RATE,
+        n_fft=N_FFT,
+        hop_length=HOP_LEN,
+        n_mels=N_MELS,
+    )
+
+    def extract_features(wav_path):
+        """Extract 128x5 log-mel spectrogram patch -> 640-dim feature vector."""
+        waveform, sr = torchaudio.load(wav_path)
+        if sr != SAMPLE_RATE:
+            waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
+        mel = mel_transform(waveform)  # (1, 128, T)
+        log_mel = torch.log(mel + 1e-8).squeeze(0)  # (128, T)
+        # Take center N_FRAMES frames
+        mid = log_mel.shape[1] // 2
+        start = max(0, mid - N_FRAMES // 2)
+        patch = log_mel[:, start:start + N_FRAMES]  # (128, 5)
+        if patch.shape[1] < N_FRAMES:
+            patch = torch.nn.functional.pad(patch, (0, N_FRAMES - patch.shape[1]))
+        return patch.transpose(0, 1).reshape(-1).numpy()  # (640,)
+
+    # Build dataset: use IDs 01-03 for train, ID 04 for test
+    train_ids = ["id_01", "id_02", "id_03"]
+    test_ids  = ["id_04"]
+
+    def collect_split(machine_ids, include_anomaly=True):
+        X_list, y_list = [], []
+        for mid in machine_ids:
+            normal_dir = os.path.join(dev_data_dir, mid, "normal")
+            anom_dir   = os.path.join(dev_data_dir, mid, "anomaly")
+            for wav in sorted(glob.glob(os.path.join(normal_dir, "*.wav"))):
+                try:
+                    X_list.append(extract_features(wav))
+                    y_list.append(0)
+                except Exception:
+                    pass
+            if include_anomaly and os.path.exists(anom_dir):
+                for wav in sorted(glob.glob(os.path.join(anom_dir, "*.wav"))):
+                    try:
+                        X_list.append(extract_features(wav))
+                        y_list.append(1)
+                    except Exception:
+                        pass
+        return X_list, y_list
+
+    print("Loading ToyADMOS/car dataset (DCASE 2020 Task 2)...")
+    print("  Processing train split (IDs 01-03, normal only)...")
+    X_tr, y_tr = collect_split(train_ids, include_anomaly=False)
+    print("  Processing test split (ID 04, normal + anomaly)...")
+    X_te, y_te = collect_split(test_ids, include_anomaly=True)
+
+    X_train = torch.tensor(np.stack(X_tr), dtype=torch.float32)
+    y_train = torch.tensor(y_tr, dtype=torch.long)
+    X_test  = torch.tensor(np.stack(X_te), dtype=torch.float32)
+    y_test  = torch.tensor(y_te, dtype=torch.long)
+
+    num_features = X_train.shape[1]  # 640
+    num_classes  = 2
+    print(f"toyadmos: {len(X_train)} train (all normal), {len(X_test)} test "
+          f"(normal+anomaly), features={num_features}, classes={num_classes}")
+    return X_train, y_train, X_test, y_test, num_features, num_classes
 
 
 def _fake_data(args):
