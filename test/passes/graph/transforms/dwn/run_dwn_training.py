@@ -363,7 +363,7 @@ def _load_nid(args):
 def _load_kws(args):
     """Load Google Speech Commands v2 (MLPerf Tiny KWS subset, 12 classes).
 
-    Features: 49 frames × 10 MFCC coefficients = 490 input features.
+    Features: 51 frames × 10 MFCC coefficients = 510 input features (torchaudio uses center-padding).
     Paper config (Table 14): z=8 thermometer bits, hidden=1608, n=6, 100 epochs.
     Uses soundfile for WAV loading (avoids torchcodec dependency in torchaudio 2.10+).
     Downloads ~2.3GB to /data/datasets/speech_commands/.
@@ -446,7 +446,7 @@ def _load_kws(args):
         val_files = set(line.strip() for line in f)
 
     def wav_to_features(wav_path):
-        """Load WAV with soundfile, extract MFCC → (490,) float32."""
+        """Load WAV with soundfile, extract MFCC → (510,) float32."""
         data, sr = sf.read(wav_path, dtype="float32")
         waveform = torch.from_numpy(data).unsqueeze(0)  # (1, T)
         if sr != SAMPLE_RATE:
@@ -456,8 +456,8 @@ def _load_kws(args):
             waveform = torch.nn.functional.pad(waveform, (0, tgt - waveform.shape[-1]))
         else:
             waveform = waveform[..., :tgt]
-        mfcc = mfcc_transform(waveform)  # (1, 10, 49)
-        return mfcc.squeeze(0).transpose(0, 1).reshape(-1).numpy()  # (490,)
+        mfcc = mfcc_transform(waveform)  # (1, 10, 51)
+        return mfcc.squeeze(0).transpose(0, 1).reshape(-1).numpy()  # (510,)
 
     print("Loading Google Speech Commands v2 (MLPerf Tiny KWS)...")
     print("  Extracting MFCC features (this takes ~35min first time; cached after)...")
@@ -517,8 +517,9 @@ def _load_kws(args):
                 X_train_list.append(feat)
                 y_train_list.append(11)
                 unknown_train_count += 1
-        # Only use 1 dir for unknown test to keep things fast
-        if unknown_train_count >= 2000:
+        # Stop after train cap AND we've seen enough test samples (at least 400)
+        unknown_test_count = sum(1 for y in y_test_list if y == 11)
+        if unknown_train_count >= 2000 and unknown_test_count >= 400:
             break
 
     X_train = torch.tensor(np.stack(X_train_list), dtype=torch.float32)
@@ -553,7 +554,10 @@ def _load_toyadmos(args):
     import urllib.request
     import zipfile
     import glob
-    import soundfile as sf
+    try:
+        import soundfile as sf
+    except ImportError:
+        raise ImportError("soundfile is required for ToyADMOS: pip install soundfile")
 
     cache_dir = "/data/datasets/toyadmos"
     os.makedirs(cache_dir, exist_ok=True)
