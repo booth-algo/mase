@@ -614,12 +614,19 @@ def _load_toyadmos(args):
         waveform = torch.from_numpy(data).unsqueeze(0)  # (1, T)
         if sr != SAMPLE_RATE:
             waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
-        mel = mel_transform(waveform)  # (1, 128, T)
+        # Trim to center segment: only compute mel for frames we actually need
+        # This gives ~50x speedup over full 11s audio
+        context_samples = (N_FRAMES + 4) * HOP_LEN + N_FFT
+        center = waveform.shape[-1] // 2
+        start = max(0, center - context_samples // 2)
+        end = min(waveform.shape[-1], start + context_samples)
+        waveform = waveform[:, start:end]
+        mel = mel_transform(waveform)  # (1, 128, ~9 frames)
         log_mel = torch.log(mel + 1e-8).squeeze(0)  # (128, T)
         # Take center N_FRAMES frames
         mid = log_mel.shape[1] // 2
-        start = max(0, mid - N_FRAMES // 2)
-        patch = log_mel[:, start:start + N_FRAMES]  # (128, 5)
+        start_frame = max(0, mid - N_FRAMES // 2)
+        patch = log_mel[:, start_frame:start_frame + N_FRAMES]  # (128, 5)
         if patch.shape[1] < N_FRAMES:
             patch = torch.nn.functional.pad(patch, (0, N_FRAMES - patch.shape[1]))
         return patch.transpose(0, 1).reshape(-1).numpy()  # (640,)
