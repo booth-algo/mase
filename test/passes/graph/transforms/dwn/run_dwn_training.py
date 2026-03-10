@@ -553,6 +553,7 @@ def _load_toyadmos(args):
     import urllib.request
     import zipfile
     import glob
+    import soundfile as sf
 
     cache_dir = "/data/datasets/toyadmos"
     os.makedirs(cache_dir, exist_ok=True)
@@ -596,7 +597,8 @@ def _load_toyadmos(args):
 
     def extract_features(wav_path):
         """Extract 128x5 log-mel spectrogram patch -> 640-dim feature vector."""
-        waveform, sr = torchaudio.load(wav_path)
+        data, sr = sf.read(wav_path, dtype="float32")
+        waveform = torch.from_numpy(data).unsqueeze(0)  # (1, T)
         if sr != SAMPLE_RATE:
             waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
         mel = mel_transform(waveform)  # (1, 128, T)
