@@ -63,16 +63,23 @@ These are LUT-stack-only (no thermometer, no GroupSum — combinational only, no
 | MNIST | [2000,1000], z=3 | 6-2 | 730 | 3.153 | 1,181 |
 | MNIST | [2000,1000,500], z=3 | 6-4-2 | 735 | 3.128 | 1,147 |
 
-### xcvu9p-flgb2104-2-i — beholder0, previous session (full pipeline, full_pipeline_top_clocked)
+### xcvu9p-flgb2104-2-i — beholder0, this session (full pipeline, full_pipeline_top_clocked)
 
 Full pipeline = thermometer (comb) + FF + dwn_top_clocked (FF between layers) + groupsum + FF.
-Clock: 4 ns / 250 MHz target.
+Clock: 4 ns / 250 MHz target. Vivado 2023.1, PerformanceOptimized, place+route completed.
 
 | Dataset | Config | n | CLB LUTs | FFs | WNS (ns) | Fmax (MHz) |
 |---------|--------|---|----------|-----|----------|------------|
-| MNIST | [2000,1000], z=3 | 6 | **1,285** | — | 1.179 | **354** |
-
-> Only MNIST n=6 full pipeline run on xcvu9p (beholder0 had license; kraken does not).
+| MNIST | [2000,1000], z=3 | 2 | **900** | 120 | 1.347 | **377** |
+| MNIST | [2000,1000], z=3 | 4 | **1,135** | 292 | 1.307 | **371** |
+| MNIST | [2000,1000], z=3 | 6 | **1,285** | 377 | 1.179 | **354** |
+| NID | [256,252], z=3 | 2 | **237** | 128 | 1.973 | **493** |
+| NID | [256,252], z=3 | 4 | **356** | 226 | 2.086 | **522** |
+| NID | [256,252], z=3 | 6 | **418** | 258 | 2.152 | **541** |
+| JSC | [3000], z=200 | 2 | **896** | 81 | 0.913 | **324** |
+| JSC | [3000], z=200 | 4 | **2,825** | 666 | 0.448 | **282** |
+| JSC | [3000], z=200 | 6 | **3,792** | 1,222 | 0.408 | **278** |
+| KWS | [1608], z=8 | 6 | **3,428** | 1,586 | 0.410 | **279** |
 
 ### xc7a35tcpg236-1 — kraken, this session (full pipeline, full_pipeline_top_clocked)
 
@@ -160,6 +167,33 @@ Mixed-N MNIST achieves **5.6× fewer LUTs AND 43% higher Fmax** vs paper's n=6 b
 
 ---
 
+## xcvu9p Full Results vs Paper (COMPLETE — beholder0, 2026-03-12)
+
+All 10 configs synthesised on xcvu9p-flgb2104-2-i, Vivado 2023.1, 4 ns clock, full pipeline.
+
+| Dataset | n | Our LUTs | Our FFs | Our Fmax | Paper LUTs | Paper Fmax | LUT Gap |
+|---------|---|----------|---------|----------|-----------|-----------|---------|
+| MNIST | 2 | **900** | 120 | 377 MHz | — | — | — |
+| MNIST | 4 | **1,135** | 292 | 371 MHz | — | — | — |
+| MNIST | 6 | **1,285** | 377 | 354 MHz | **4,082** | **827 MHz** | **3.18× fewer** |
+| NID | 2 | **237** | 128 | 493 MHz | — | — | — |
+| NID | 4 | **356** | 226 | 522 MHz | — | — | — |
+| NID | 6 | **418** | 258 | 541 MHz | — | — | — |
+| JSC | 2 | **896** | 81 | 324 MHz | — | — | — |
+| JSC | 4 | **2,825** | 666 | 282 MHz | — | — | — |
+| JSC | 6 | **3,792** | 1,222 | 278 MHz | **4,972** | **827 MHz** | **1.31× fewer** |
+| KWS | 6 | **3,428** | 1,586 | 279 MHz | — | — | — |
+
+### Key Findings
+
+- **MNIST n=6**: Our 1,285 LUTs vs paper 4,082 → **3.18× fewer LUTs**; 354 vs 827 MHz
+- **JSC n=6**: Our 3,792 LUTs vs paper 4,972 → **1.31× fewer LUTs**; 278 vs 827 MHz
+- JSC gap smaller than MNIST: 200-bit thermometer dominates (wide comparators pack less efficiently)
+- Fmax limited by thermometer critical path at large bit-widths (JSC/KWS ~278-324 MHz vs MNIST ~354-377 MHz)
+- NID fastest (493-541 MHz): small network + narrow z=3 thermometer
+
+---
+
 ## Status Summary
 
 | Task | Status |
@@ -168,7 +202,8 @@ Mixed-N MNIST achieves **5.6× fewer LUTs AND 43% higher Fmax** vs paper's n=6 b
 | Fetch paper Table 2 numbers | ✅ Done |
 | Create synthesis tracker | ✅ Done |
 | xcvu9p synthesis on kraken | ❌ License unavailable (synth_design requires Enterprise) |
-| xcvu9p synthesis from beholder0 (MNIST n=6) | ✅ Done (in novel_findings.md) |
+| xcvu9p synthesis on beholder0 — all 10 configs | ✅ Done (2026-03-12) |
 | xc7a35t full pipeline (all 10 configs) | ✅ Done (in benchmark.md) |
-| LUT gap analysis | ✅ Done — 3.17× fewer LUTs, main cause: WAFR packing |
-| Fmax gap analysis | ✅ Done — 354 MHz (full pipeline) vs 827 MHz paper |
+| LUT gap analysis (MNIST n=6) | ✅ Done — 3.18× fewer LUTs |
+| LUT gap analysis (JSC n=6) | ✅ Done — 1.31× fewer LUTs |
+| Fmax gap analysis | ✅ Done — 354 MHz (MNIST) vs 827 MHz paper |
