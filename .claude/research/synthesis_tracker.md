@@ -240,33 +240,54 @@ Net result: 377 FFs vs expected 4,422 = Vivado eliminated ~91% of FFs.
 
 ### Throughput Optimisation Experiments (2026-03-12, MNIST n=6, xcvu9p)
 
-Three experiments run in sequence on beholder0 (xcvu9p-flgb2104-2-i), `full_pipeline_top_clocked`:
+Three experiments run on beholder0 (xcvu9p-flgb2104-2-i), `full_pipeline_top_clocked`:
 
 | Experiment | LUTs | FFs | WNS (ns) | Fmax (MHz) | Notes |
 |------------|------|-----|----------|------------|-------|
-| Baseline: PerformanceOptimized, no dont_touch | 1,285 | 377 | +1.179 | **354** | WAFR packing eliminates 91% FFs |
-| Flow_PerfOptimized_high, no dont_touch | 1,285 | 377 | +1.179 | **354** | **Identical** — FF pruning is at synth, not impl |
-| Flow_PerfOptimized_high + dont_touch | 4,889 | 5,422 | +0.772 | **309** | Timing MET; thermometer now critical path |
+| Baseline: PerformanceOptimized, no dont_touch | 1,285 | 377 | +1.179 | **354** | WAFR packing; GroupSum is critical path |
+| Flow_PerfOptimized_high, no dont_touch | 1,285 | 377 | +1.179 | **354** | Identical — FF pruning is at synth, not impl |
+| Flow_PerfOptimized_high + dont_touch | 4,889 | 5,422 | +0.772 | **309** | Pipeline correct (1 LUT/stage) but routing-limited |
 
-**Key finding**: `Flow_PerfOptimized_high` without `dont_touch` = identical to `PerformanceOptimized`.
-FF pruning happens at `synth_design` elaboration (dead-bit removal), not at implementation.
-Aggressive impl directives cannot recover already-pruned FFs.
+### Critical Path Analysis (without dont_touch)
 
-**With `dont_touch`**: FFs forced to 5,422 (above paper's 3,385). LUTs jump to 4,889 (vs paper 4,082).
-Timing still MET (+0.772 ns WNS) but Fmax drops to 309 MHz — the thermometer comparator
-chain (784 × 8-bit comparators) becomes the new critical path.
+**Critical path is GroupSum, NOT thermometer or LUT layers.**
 
-**Why paper achieves 827 MHz**: Paper's synthesis almost certainly covers the LUT stack only
-(no thermometer). Our LUT-stack-only result was 775 MHz on xcvu9p — within 6.5% of paper.
-The full pipeline with thermometer is inherently limited to ~309-354 MHz regardless of directives.
+Vivado absorbs inter-layer FFs because each DWN neuron is a single LUT6 (trivial 1-level logic).
+This collapses the 4-stage pipeline to effectively 2 stages:
+- LUT Layer 1 output FF → 7 LUT levels of `$countones(100 bits)` → output FF
+- Data path: 2.800 ns (logic 0.741 ns = 26.5%, route 2.059 ns = 73.5%)
+- The 100-bit popcount (1000 outputs / 10 groups) requires ceil(log2(100)) ≈ 7 adder tree levels
 
-### Should we modify RTL to match paper's 3,385 FFs?
+### Critical Path Analysis (with dont_touch)
 
-**To match paper's resource footprint** (dont_touch, full pipeline): 4,889 LUTs / 5,422 FFs / 309 MHz.
-This overshoots paper (4,082 LUTs / 3,385 FFs / 827 MHz). Paper's higher Fmax confirms
-their synthesis excludes the thermometer critical path.
+Pipeline is correctly broken (1 LUT level per stage), but Fmax DROPS to 309 MHz because:
+- Routing is **95.9%** of critical path (3.08 ns routing vs 0.13 ns logic)
+- `dont_touch` forces 5,422 FFs into fixed positions, preventing optimal placement
+- 252 SLL inter-SLR crossings on the xcvu9p multi-die device
+- Worst path: L0 FF[121] → LUT6 → L1 FF[416], 3.208 ns total (3.078 ns routing)
 
-**For area minimisation**: 1,285 LUTs / 377 FFs / 354 MHz is Pareto-optimal.
+### Paper Comparison Correction
 
-**Recommended reporting**: Present two points — (1) area-optimised (our default) and
-(2) dont_touch variant — and note paper's Fmax refers to LUT-stack-only synthesis.
+**There is no "md" MNIST model in the paper.** MNIST configs in Table 13:
+- **sm**: [1000, 500], z=1 — Table 2 shows: 2,092 LUTs, 1,757 FFs, 873 MHz
+- **lg**: [2000, 1000], z=3 — appears in Table 1 (Zynq Z-7045) but NOT confirmed in Table 2 OOC
+- **lg+aug**: [2000, 1000], z=3 + augmentation
+
+The "4,082 LUT / 3,385 FF / 827 MHz" numbers previously attributed to "lg" need re-verification
+against the actual paper tables. The confirmed xcvu9p OOC result is sm: 2,092 LUTs, 1,757 FFs, 873 MHz.
+
+Paper's RTL is **not open-source** (GitHub repo has PyTorch training only).
+Paper's Vivado version is **not stated**.
+Paper confirms `Flow_PerfOptimized_high` strategy in OOC mode for Table 2.
+
+### Root Cause of Fmax Gap
+
+| Factor | Our design | Paper (likely) |
+|--------|-----------|----------------|
+| GroupSum implementation | Combinational $countones (7 LUT levels) | Pipelined popcount (2-3 stages) |
+| Inter-layer FFs | Absorbed by Vivado (neurons are trivial 1-LUT) | Preserved (possibly via dont_touch or RTL structure) |
+| FF count | 377 (93% pruned by Vivado) | 1,757 (sm config, pipeline preserved) |
+| Critical path | GroupSum adder tree (7 levels) | Likely 1-2 levels per stage |
+
+**Primary fix**: Pipeline the GroupSum popcount into 2-3 stages → target 600-800+ MHz.
+**Secondary fix**: Preserve inter-layer FFs without dont_touch (use KEEP_HIERARCHY or RTL restructuring).
