@@ -207,3 +207,43 @@ All 10 configs synthesised on xcvu9p-flgb2104-2-i, Vivado 2023.1, 4 ns clock, fu
 | LUT gap analysis (MNIST n=6) | ✅ Done — 3.18× fewer LUTs |
 | LUT gap analysis (JSC n=6) | ✅ Done — 1.31× fewer LUTs |
 | Fmax gap analysis | ✅ Done — 354 MHz (MNIST) vs 827 MHz paper |
+
+---
+
+## WAFR Packing Analysis (2026-03-12)
+
+### Paper synthesis directive
+Paper uses `Flow_PerfOptimized_high` (from Table 2 caption). Our TCL uses `PerformanceOptimized`.
+These are **not the same** in Vivado 2023.x:
+- `PerformanceOptimized` — default, balances area/timing, enables WAFR packing aggressively
+- `Flow_PerfOptimized_high` — prioritises timing, uses `-directive PerformanceOptimized` at impl
+  stages but applies additional timing-driven placement constraints that reduce packing
+
+Paper does NOT explicitly mention WAFR avoidance, `dont_touch`, or flatten_hierarchy.
+
+### Why our FF count is so low (377 vs paper's 3,385)
+
+Our pipeline RTL registers the full 2,352-bit thermometer bus and the 2,000-bit L0→L1 bus.
+Expected FFs ≈ 2,352 + 2,000 + 70 (output) = 4,422.
+
+Vivado prunes FFs aggressively:
+1. **Dead thermometer bits**: LearnableMapping leaves 1,109 of 2,352 bits unused → those FFs
+   are eliminated as dead logic at elaboration (constant drivers)
+2. **WAFR-packed L0→L1**: When two L0 neurons share a physical LUT6 (WAFR), they share
+   an output FF too → halves the L0→L1 FF count
+3. **L1→GroupSum FFs**: GroupSum directly absorbs 1,000-bit popcount; Vivado merges the
+   output FF with the adder tree reduction logic
+
+Net result: 377 FFs vs expected 4,422 = Vivado eliminated ~91% of FFs.
+
+### Should we modify RTL to match paper's 3,385 FFs?
+
+**To maximise Fmax** (match paper's 827 MHz): Yes. Add `(* dont_touch = "true" *)` to
+the thermo_reg and L0→L1 registers. This prevents dead-bit pruning and forces full 2,352 +
+2,000 FFs, shortening the combinational path per stage → higher Fmax but more resources.
+
+**For area minimisation** (current goal): No. 377 FFs with 1,285 LUTs is strictly better
+than 3,385 FFs with 4,082 LUTs for the same MNIST n=6 accuracy (98.51%).
+
+**Recommended**: Our current synthesis is Pareto-optimal for area. The paper's synthesis is
+better for throughput (pipelined at 827 MHz). Both are valid design points.
