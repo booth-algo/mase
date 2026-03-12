@@ -74,6 +74,31 @@ All values Vivado-measured (OOC synthesis, xc7a35tcpg236-1, PerformanceOptimized
 - JSC: DWN n=2 (75.19%, 592 LUTs) vs DiffLogic (63.45%, 3,832 LUTs) — **+11.7pp accuracy AND 6.5× fewer LUTs**
 
 ---
+## Full Pipeline Synthesis (thermometer + LUT stack + GroupSum, clocked)
+
+**Date**: 2026-03-12  **Part**: xc7a35tcpg236-1  **Top**: `full_pipeline_top_clocked`
+**Method**: synth_design only (OOC, PerformanceOptimized) — no place/route (JSC/KWS too large for xc7a35t)
+
+| Dataset | Config | Accuracy | CLB LUTs | Flip-Flops | Notes |
+|---------|--------|----------|----------|------------|-------|
+| MNIST | DWN n=2 [2000,1000] | 97.44% | **1,126** | 119 | |
+| MNIST | DWN n=4 [2000,1000] | 98.14% | **1,438** | 295 | |
+| MNIST | DWN n=6 [2000,1000] | 98.51% | **1,552** | 374 | |
+| NID | DWN n=2 [256,252] | 75.60% | **301** | 128 | |
+| NID | DWN n=4 [256,252] | 75.35% | **453** | 226 | |
+| NID | DWN n=6 [256,252] | 74.15% | **515** | 258 | |
+| JSC | DWN n=2 [3000] | 75.19% | **1,169** | 81 | Thermometer adds 577 LUTs over LUT-stack-only |
+| JSC | DWN n=4 [3000] | 75.0% | **2,657** | 1,234 | Thermometer dominates: +1,591 LUTs |
+| JSC | DWN n=6 [3000] | 75.09% | **3,706** | 2,223 | Thermometer adds 2,532 LUTs |
+| KWS | DWN n=6 [1608] | 68.65% | **3,374** | 1,588 | 510 feats × 8 bits = 4080 thermo bits |
+
+### Key Observations
+- **MNIST** (3 bits): thermometer adds only ~200-300 LUTs (minor overhead)
+- **JSC** (200 bits): thermometer dominates — 3200 comparators add 577–2532 LUTs depending on n
+- **KWS** (8 bits, 510 feats): 4080 comparators + 1608-neuron n=6 LUT stack = 3,374 LUTs total
+- FFs come from inter-layer registers in `full_pipeline_top_clocked` (1 FF stage per LUT layer + input/output)
+
+---
 ## Task 3: Post-Training Boolean Minimisation via ABC
 
 ### ABC (strash; dc2) results — AND node count after minimisation
