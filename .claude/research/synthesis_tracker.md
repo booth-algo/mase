@@ -207,6 +207,8 @@ All 10 configs synthesised on xcvu9p-flgb2104-2-i, Vivado 2023.1, 4 ns clock, fu
 | LUT gap analysis (MNIST n=6) | ✅ Done — 3.18× fewer LUTs |
 | LUT gap analysis (JSC n=6) | ✅ Done — 1.31× fewer LUTs |
 | Fmax gap analysis | ✅ Done — 354 MHz (MNIST) vs 827 MHz paper |
+| Flow_PerfOptimized_high experiment (no dont_touch) | ✅ Done — identical to PerformanceOptimized; FF pruning at synth not impl |
+| dont_touch + Flow_PerfOptimized_high (xcvu9p) | ✅ Done — 4,889 LUTs / 5,422 FFs / 309 MHz; thermometer is new bottleneck |
 
 ---
 
@@ -236,14 +238,35 @@ Vivado prunes FFs aggressively:
 
 Net result: 377 FFs vs expected 4,422 = Vivado eliminated ~91% of FFs.
 
+### Throughput Optimisation Experiments (2026-03-12, MNIST n=6, xcvu9p)
+
+Three experiments run in sequence on beholder0 (xcvu9p-flgb2104-2-i), `full_pipeline_top_clocked`:
+
+| Experiment | LUTs | FFs | WNS (ns) | Fmax (MHz) | Notes |
+|------------|------|-----|----------|------------|-------|
+| Baseline: PerformanceOptimized, no dont_touch | 1,285 | 377 | +1.179 | **354** | WAFR packing eliminates 91% FFs |
+| Flow_PerfOptimized_high, no dont_touch | 1,285 | 377 | +1.179 | **354** | **Identical** — FF pruning is at synth, not impl |
+| Flow_PerfOptimized_high + dont_touch | 4,889 | 5,422 | +0.772 | **309** | Timing MET; thermometer now critical path |
+
+**Key finding**: `Flow_PerfOptimized_high` without `dont_touch` = identical to `PerformanceOptimized`.
+FF pruning happens at `synth_design` elaboration (dead-bit removal), not at implementation.
+Aggressive impl directives cannot recover already-pruned FFs.
+
+**With `dont_touch`**: FFs forced to 5,422 (above paper's 3,385). LUTs jump to 4,889 (vs paper 4,082).
+Timing still MET (+0.772 ns WNS) but Fmax drops to 309 MHz — the thermometer comparator
+chain (784 × 8-bit comparators) becomes the new critical path.
+
+**Why paper achieves 827 MHz**: Paper's synthesis almost certainly covers the LUT stack only
+(no thermometer). Our LUT-stack-only result was 775 MHz on xcvu9p — within 6.5% of paper.
+The full pipeline with thermometer is inherently limited to ~309-354 MHz regardless of directives.
+
 ### Should we modify RTL to match paper's 3,385 FFs?
 
-**To maximise Fmax** (match paper's 827 MHz): Yes. Add `(* dont_touch = "true" *)` to
-the thermo_reg and L0→L1 registers. This prevents dead-bit pruning and forces full 2,352 +
-2,000 FFs, shortening the combinational path per stage → higher Fmax but more resources.
+**To match paper's resource footprint** (dont_touch, full pipeline): 4,889 LUTs / 5,422 FFs / 309 MHz.
+This overshoots paper (4,082 LUTs / 3,385 FFs / 827 MHz). Paper's higher Fmax confirms
+their synthesis excludes the thermometer critical path.
 
-**For area minimisation** (current goal): No. 377 FFs with 1,285 LUTs is strictly better
-than 3,385 FFs with 4,082 LUTs for the same MNIST n=6 accuracy (98.51%).
+**For area minimisation**: 1,285 LUTs / 377 FFs / 354 MHz is Pareto-optimal.
 
-**Recommended**: Our current synthesis is Pareto-optimal for area. The paper's synthesis is
-better for throughput (pipelined at 827 MHz). Both are valid design points.
+**Recommended reporting**: Present two points — (1) area-optimised (our default) and
+(2) dont_touch variant — and note paper's Fmax refers to LUT-stack-only synthesis.
