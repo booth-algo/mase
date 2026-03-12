@@ -174,7 +174,7 @@ test-trainer/
 # DiffLogic: tutorial files
 docs/tutorials/difflogic/data-mnist/
 
-# Research/experiment notes (local only)
+# Research/experiment notes (local only — canonical copies in .claude/research/)
 CLAUDE_NOVEL.md
 CLAUDE_FUTURE_TASKS.md
 CLAUDE_STATUS.md
