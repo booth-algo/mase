@@ -220,3 +220,18 @@ Result: 8k learnable mapping trains at ~47GB peak on A6000, ~13 min/epoch.
 
 - **2-layer**: `6-4` (40.69%) dominates `4-6` and `6-6` — CIFAR-10 needs high fan-in in L1
 - **3-layer**: `6-2-4` (172k LUTs, 40.44%) dominates `6-6-6` (393k LUTs, 38.28%)
+
+
+---
+
+## Research Notes & Results
+
+Canonical research notes are tracked in `.claude/` (committed to `kev/impl`):
+
+- `.claude/research/benchmark.md` — accuracy vs paper + Vivado LUT counts (all final)
+- `.claude/research/novel_findings.md` — mixed-N, Pareto, ABC findings
+- `.claude/research/future_tasks.md` — outstanding ideas
+- `.claude/results/vivado/` — 12 Vivado utilization reports (xc7a35tcpg236-1, 2026-03-12)
+- `.claude/results/abc/abc_summary.md` — AND node counts after ABC minimisation
+
+Local `CLAUDE_*.md` files have been removed; use `.claude/research/` instead.
