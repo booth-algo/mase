@@ -291,3 +291,51 @@ Paper confirms `Flow_PerfOptimized_high` strategy in OOC mode for Table 2.
 
 **Primary fix**: Pipeline the GroupSum popcount into 2-3 stages → target 600-800+ MHz.
 **Secondary fix**: Preserve inter-layer FFs without dont_touch (use KEEP_HIERARCHY or RTL restructuring).
+
+---
+
+## FloPoCo Replication of Mecik & Kumm (2026-03-13)
+
+### Goal
+Reproduce Mecik & Kumm's DWN-TEN results (4,972 LUTs / 3,305 FFs / 827 MHz) using real FloPoCo VHDL on xcvu9p, then compare with MASE behavioral RTL.
+
+### Methodology
+- **FloPoCo operators**: `GenericLut` (3,000 neurons), `IntMultiAdder` (bitheap popcount), `IntConstantComparator` (thermometer encoder)
+- **Docker**: `flopoco-dwn:latest` on kraken, synthesis on beholder0 (Vivado 2023.1)
+- **Part**: xcvu9p-flgb2104-2-i, OOC, Flow_PerfOptimized_high
+- **Scripts**: `scripts/emit_dwn_flopoco_real.py`, `scripts/emit_flopoco_thermo.py`
+
+### Evolution of Results
+
+| Version | Thermo Encoder | Popcount Pipeline | Clock Target | LUTs | FFs | Fmax | Notes |
+|---------|---------------|------------------|-------------|------|-----|------|-------|
+| v1 | Behavioral VHDL | 1-stage (700 MHz) | 700 MHz | 5,278 | 4,020 | 680 MHz | First real FloPoCo |
+| v1 | Behavioral VHDL | 1-stage (700 MHz) | 909 MHz | 5,286 | 4,243 | 732 MHz | Best Fmax with v1 |
+| v1 no-thermo | — (excluded) | 1-stage (700 MHz) | 909 MHz | 4,026 | 4,591 | 746 MHz | Matches Bacellar 4,082 |
+| v2 | IntConstantComparator | 1-stage (700 MHz) | 700 MHz | 4,868 | 4,018 | 719 MHz | −410 LUTs from thermo |
+| v2 | IntConstantComparator | 1-stage (700 MHz) | 700 MHz (2022.2) | 4,870 | 4,018 | 700 MHz | Vivado ver ≈ no diff |
+| v3 | IntConstantComparator | 3-stage (1500 MHz) | 700 MHz | 4,836 | 4,398 | 772 MHz | Deeper pipeline |
+| **v3** | **IntConstantComparator** | **3-stage (1500 MHz)** | **800 MHz** | **4,836** | **4,398** | **837.5 MHz** | **BEST — exceeds paper** |
+| v3 | IntConstantComparator | 3-stage (1500 MHz) | 850 MHz | 4,835 | 4,398 | 849.6 MHz | Fails by 1 ps |
+| **Paper** | **—** | **—** | **—** | **4,972** | **3,305** | **827 MHz** | **Mecik & Kumm ref** |
+
+### Key Optimizations
+1. **IntConstantComparator thermo** (v1→v2): −410 LUTs (5,278→4,868). FloPoCo generates optimized constant comparison logic vs behavioral `if feat >= threshold`.
+2. **3-stage popcount pipeline** (v2→v3): +118 MHz Fmax (719→837.5 MHz). FloPoCo `IntMultiAdder` at 1500 MHz target adds 2 extra pipeline stages to the final IntAdder, shortening critical path. Costs +380 FFs.
+3. **800 MHz Vivado clock target**: Sweet spot — 700 MHz leaves slack on the table, 850 MHz barely fails (1 ps), 909 MHz overshoots badly.
+
+### Final Comparison vs Papers
+
+| Metric | MASE behavioral | FloPoCo v3 (best) | Mecik & Kumm | Bacellar lg |
+|--------|----------------|-------------------|--------------|-------------|
+| LUTs | **1,318** | 4,836 | 4,972 | 4,082 |
+| FFs | 775 | 4,398 | 3,305 | 3,385 |
+| Fmax | 711 MHz | 837.5 MHz | 827 MHz | 827 MHz |
+| vs Mecik LUTs | **3.77× fewer** | **2.7% fewer** | — | — |
+| vs Mecik Fmax | 0.86× | **1.01×** | — | — |
+
+### Conclusion
+- **FloPoCo replication achieved**: 4,836 LUTs / 837.5 MHz exceeds Mecik & Kumm's 4,972 / 827 MHz
+- **MASE behavioral advantage confirmed**: 3.7× fewer LUTs due to WAFR packing
+- **FF gap** (4,398 vs 3,305): our deeper popcount pipeline; paper likely uses 1-stage popcount with different critical path structure
+- **Bacellar match**: no-thermo variant at 4,026 LUTs matches Bacellar's 4,082 within 1.4% — confirms they exclude thermometer encoder
