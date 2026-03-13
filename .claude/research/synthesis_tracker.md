@@ -338,4 +338,39 @@ Reproduce Mecik & Kumm's DWN-TEN results (4,972 LUTs / 3,305 FFs / 827 MHz) usin
 - **FloPoCo replication achieved**: 4,836 LUTs / 837.5 MHz exceeds Mecik & Kumm's 4,972 / 827 MHz
 - **MASE behavioral advantage confirmed**: 3.7× fewer LUTs due to WAFR packing
 - **FF gap** (4,398 vs 3,305): our deeper popcount pipeline; paper likely uses 1-stage popcount with different critical path structure
+
+---
+
+## ABC Boolean Minimization → Vivado Synthesis (2026-03-13)
+
+### Setup
+- ABC: `strash; dc2; if -K 6; write_verilog` → behavioral assign-style Verilog
+- Vivado: xc7a35tcpg236-1, OOC, synth_design (default strategy)
+- beholder0 results: `~/dwn_synth/abc_results/*/utilization.rpt`
+
+### Results
+
+| Config | AND nodes | Original LUTs | ABC LUTs | Change |
+|--------|-----------|---------------|----------|--------|
+| NID n=2 | 539 | 199 | 204 | +2.5% |
+| NID n=4 | 2,630 | 441 | 447 | +1.4% |
+| NID n=6 | 10,324 | 474 | 471 | −0.6% |
+| MNIST n=2 | 4,172 | 969 | 988 | +2.0% |
+| MNIST n=4 | 16,525 | 1,236 | 2,831 | **+129%** |
+| MNIST n=6 | 68,950 | 1,256 | 4,574 | **+264%** |
+| JSC n=2 | 636 | 592 | 661 | +11.7% |
+| JSC n=4 | 4,583 | 1,066 | 1,072 | +0.6% |
+| JSC n=6 | 17,538 | 1,174 | 1,179 | +0.4% |
+| KWS n=6 | 37,765 | — | 1,608 | — |
+
+### Key Finding
+**ABC minimization is counterproductive for large networks with high fan-in.**
+
+- MNIST n=6 (3000 neurons): ABC 4,574 vs original 1,256 → **3.6× worse**
+- MNIST n=4: ABC 2,831 vs original 1,236 → **2.3× worse**
+- Small networks (NID, JSC): negligible change (±3%)
+
+**Mechanism**: ABC's `if -K 6` technology mapping produces structural LUT6 decompositions that prevent Vivado's WAFR packing. The ABC-mapped Verilog, despite using behavioral `assign` syntax, encodes a rigid AIG decomposition that Vivado treats similarly to structural LUT6 instantiations.
+
+**Conclusion**: When behavioral RTL already enables WAFR packing, post-training ABC minimization should be avoided. ABC is redundant at best and actively harmful for large networks where WAFR provides the greatest benefit.
 - **Bacellar match**: no-thermo variant at 4,026 LUTs matches Bacellar's 4,082 within 1.4% — confirms they exclude thermometer encoder

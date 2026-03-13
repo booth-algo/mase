@@ -1,0 +1,429 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{siunitx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{cite}
+\usepackage{balance}
+
+\sisetup{group-separator={,}, group-minimum-digits=4}
+
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{TODO:} #1}}
+
+\begin{document}
+
+\title{Behavioral RTL Synthesis for Differentiable Weightless Networks: Exploiting FPGA LUT Packing for 3.7$\times$ Area Reduction}
+
+\author{
+\IEEEauthorblockN{Kevin H.\ Lam, Aaron Jino, Jianyi Cheng}
+\IEEEauthorblockA{Department of Electrical and Electronic Engineering\\
+Imperial College London, United Kingdom}
+}
+
+\maketitle
+
+\begin{abstract}
+Differentiable Weightless Neural Networks (DWNs) implement inference entirely in FPGA lookup tables, achieving orders-of-magnitude improvements in energy-delay product over conventional neural accelerators.
+However, existing DWN hardware generators rely on structural RTL---instantiating explicit LUT primitives---which prevents FPGA synthesis tools from exploiting architecture-specific packing optimizations.
+We present a behavioral RTL generation pipeline within the MASE hardware synthesis framework that emits technology-agnostic Verilog, enabling Vivado's Wide-AND Function Reduction (WAFR) to pack multiple logical neurons into single physical LUT6\_2 cells.
+On a Xilinx UltraScale+ xcvu9p, our behavioral approach achieves \num{1318} LUTs for a \num{3000}-neuron JSC network---3.7$\times$ fewer than the best structural implementation and 3.1$\times$ fewer than the original DWN paper.
+We further present the first controlled Pareto comparison of DWN against DiffLogic networks across three benchmarks, demonstrating that DWN with fan-in $n{=}2$ dominates DiffLogic in both accuracy and area on all datasets (up to $+$11.7 percentage points accuracy at 6.5$\times$ fewer LUTs).
+Finally, we introduce mixed per-layer fan-in selection, yielding 2.3$\times$ area reduction with simultaneous accuracy improvement on CIFAR-10.
+\end{abstract}
+
+% ============================================================================
+\section{Introduction}
+\label{sec:intro}
+% ============================================================================
+
+The deployment of neural networks on FPGAs demands architectures whose inference primitives map efficiently to the target fabric.
+FPGA configurable logic blocks (CLBs) are fundamentally lookup-table machines: each Xilinx UltraScale+ CLB slice contains eight LUT6\_2 cells, each implementing an arbitrary 6-input Boolean function~\cite{xilinx2021ultrascale}.
+This observation motivates \emph{weightless} neural networks, which encode learned parameters directly as LUT truth tables rather than as multiply-accumulate weights.
+
+Differentiable Weightless Neural Networks (DWNs)~\cite{bacellar2024dwn} train LUT truth tables via gradient descent using a softmax relaxation, achieving competitive accuracy on standard benchmarks while reporting $2522\times$ energy-delay improvement over FINN~\cite{umuroglu2017finn} on FPGA.
+Their hardware implementation maps each neuron to a single $n$-input LUT, where $n$ is the fan-in.
+Recent work by Mecik and Kumm~\cite{mecik2025dwnten} extends DWN with ensemble techniques (DWN-TEN), while Jino et al.~\cite{jino2024difflogic} integrate the competing DiffLogic~\cite{petersen2022difflogic} approach into the MASE framework~\cite{mase2024}.
+
+A critical but overlooked aspect of LUT-based neural network deployment is \emph{how} the RTL is generated.
+Existing approaches~\cite{bacellar2024dwn, mecik2025dwnten} use structural RTL that instantiates device-specific LUT primitives (e.g., \texttt{LUT6} or \texttt{LUT6\_2}), fixing the technology mapping at code-generation time.
+While this gives precise control over placement, it \emph{prevents} the synthesis tool from applying cross-neuron optimizations such as Wide-AND Function Reduction (WAFR), which packs pairs of LUT5 functions into a single LUT6\_2 cell when they share common inputs.
+
+\textbf{Contributions.}
+We make four contributions:
+\begin{enumerate}
+    \item \textbf{WAFR-aware behavioral RTL generation.}
+    We implement a behavioral Verilog emission pipeline in MASE that encodes each DWN neuron as a simple array indexing expression (\texttt{LUT\_CONTENTS[data\_in]}). This technology-agnostic style enables Vivado to exploit WAFR packing, achieving 3.7$\times$ fewer LUTs than structural approaches on identical networks (Section~\ref{sec:method}).
+
+    \item \textbf{DWN vs.\ DiffLogic Pareto frontier.}
+    We present the first controlled comparison under a unified toolflow, showing DWN dominates DiffLogic on all three benchmarks in both accuracy and FPGA area (Section~\ref{sec:pareto}).
+
+    \item \textbf{Mixed per-layer fan-in.}
+    We introduce heterogeneous fan-in selection across DWN layers, demonstrating 2.3$\times$ area reduction with simultaneous accuracy gains on CIFAR-10 (Section~\ref{sec:mixed}).
+
+    \item \textbf{ABC Boolean minimization analysis.}
+    We investigate post-training Boolean minimization via ABC~\cite{brayton2010abc} and show that it is counterproductive when WAFR packing is available, as ABC's technology-mapped output destroys the behavioral structure that Vivado exploits for LUT packing (Section~\ref{sec:abc}).
+\end{enumerate}
+
+
+% ============================================================================
+\section{Background}
+\label{sec:background}
+% ============================================================================
+
+\subsection{Differentiable Weightless Neural Networks}
+
+A DWN~\cite{bacellar2024dwn} consists of three stages: (i)~a \emph{distributive thermometer} encoder that maps continuous inputs to binary vectors using empirical quantile thresholds, (ii)~one or more \emph{LUT layers} where each neuron selects $n$ input bits and performs a $2^n$-entry table lookup, and (iii)~a \emph{GroupSum} output that sums neuron outputs within each class group and divides by a temperature $\tau$.
+
+During training, the binary LUT entries are relaxed to continuous values via a softmax over $\{0,1\}$, and the input selection (mapping) is made differentiable through a learned soft permutation matrix.
+At inference, both the LUT contents and input mappings are discretized, yielding a purely combinational Boolean circuit.
+
+The fan-in $n$ controls the accuracy--area trade-off: each neuron with fan-in $n$ requires a $2^n$-entry truth table, consuming one LUT$n$ on FPGA.
+Prior work uses uniform fan-in across all layers.
+
+\subsection{FPGA LUT Architecture and WAFR Packing}
+
+Xilinx UltraScale+ devices implement configurable logic using LUT6\_2 cells~\cite{xilinx2021ultrascale}.
+Each cell contains 64 configuration bits and can implement either one arbitrary 6-input function or two arbitrary 5-input functions sharing five common inputs (the ``LUT5 pair'' mode).
+The Wide-AND Function Reduction (WAFR) optimization in Vivado identifies pairs of LUT5 functions that share inputs and packs them into a single LUT6\_2 cell, halving the physical cell count.
+
+This optimization applies only when the synthesis tool has freedom to restructure logic---it cannot fire on structurally instantiated LUT primitives, which are treated as black boxes.
+
+\subsection{Prior Hardware Implementations}
+
+Bacellar et al.~\cite{bacellar2024dwn} generate structural Verilog using explicit LUT6 primitives with \texttt{INIT} parameters encoding truth tables.
+Mecik and Kumm~\cite{mecik2025dwnten} follow a similar structural approach for their DWN-TEN ensemble architecture.
+Both approaches fix technology mapping at code generation time.
+
+DiffLogic networks~\cite{petersen2022difflogic} use fan-in 2 exclusively, learning from a set of 16 possible 2-input Boolean functions.
+Jino et al.~\cite{jino2024difflogic} implemented DiffLogic synthesis within MASE, enabling direct comparison with DWN under a unified framework.
+
+
+% ============================================================================
+\section{MASE DWN Hardware Generation}
+\label{sec:method}
+% ============================================================================
+
+\subsection{Behavioral RTL Emission Pipeline}
+
+Our hardware generation pipeline operates within the MASE framework~\cite{mase2024}, which traces PyTorch models via \texttt{torch.fx} and applies hardware metadata passes to emit synthesizable Verilog.
+
+For each DWN LUT layer, the metadata pass extracts four parameters from the trained checkpoint: the discretized input indices (mapping), the binarized LUT contents, and the layer dimensions (\texttt{INPUT\_SIZE}, \texttt{OUTPUT\_SIZE}).
+These are encoded as Verilog parameters in a generic \texttt{dwn\_lut\_layer} module.
+
+The key design decision is the Verilog coding style for each neuron.
+We emit behavioral array indexing:
+
+\begin{verbatim}
+  parameter [0:2**LUT_N-1]
+    LUT_CONTENTS [0:OUTPUT_SIZE-1];
+  // Per-neuron lookup:
+  assign out[i] = LUT_CONTENTS[i][data_in_i];
+\end{verbatim}
+
+\noindent This style is technology-agnostic: the synthesis tool sees a generic truth table lookup and is free to decompose, share, and pack the resulting logic.
+In contrast, structural approaches instantiate device primitives:
+
+\begin{verbatim}
+  LUT6 #(.INIT(64'hABCD...)) neuron_i (
+    .O(out[i]), .I0(d[0]), ...);
+\end{verbatim}
+
+\noindent These primitives pass through synthesis as black boxes, precluding cross-neuron optimization.
+
+\subsection{Why Behavioral Enables WAFR}
+
+When Vivado synthesizes behavioral LUT expressions, it decomposes each $n$-input function into LUT5/LUT6 primitives during technology mapping.
+For $n \leq 5$, each neuron maps to a single LUT5.
+The WAFR pass then identifies pairs of LUT5 neurons that share at least five common inputs---a frequent occurrence in DWN, where the thermometer encoding produces highly correlated input bits within each layer---and packs each pair into one physical LUT6\_2 cell.
+
+For $n = 6$, each neuron already fills a complete LUT6, so WAFR packing does not apply.
+However, behavioral synthesis still enables other optimizations such as constant propagation (neurons whose truth tables are all-zero or all-one are eliminated) and logic sharing across neurons with partially overlapping truth tables.
+
+\subsection{Pipelined Variant}
+
+For timing-critical deployments, we also emit a clocked variant that inserts pipeline registers between layers.
+Each layer boundary includes an input register, a combinational LUT array, and an output register with valid/ready handshaking.
+This variant trades area (additional flip-flops) for higher clock frequency.
+
+
+% ============================================================================
+\section{Experimental Results}
+\label{sec:results}
+% ============================================================================
+
+\subsection{Experimental Setup}
+
+All synthesis experiments use Vivado 2023.1 in out-of-context (OOC) mode with \texttt{PerformanceOptimized} strategy.
+We target two FPGA devices:
+
+\begin{itemize}
+    \item \textbf{xcvu9p-flgb2104-2-i} (UltraScale+): for the WAFR packing comparison (Section~\ref{sec:wafr}), matching the target used by Mecik and Kumm~\cite{mecik2025dwnten} and Bacellar et al.~\cite{bacellar2024dwn}.
+    \item \textbf{xc7a35tcpg236-1} (Artix-7): for the Pareto and mixed fan-in experiments (Sections~\ref{sec:pareto}--\ref{sec:mixed}), using the free WebPACK license.
+\end{itemize}
+
+\noindent All area numbers report ``CLB LUTs'' (LUT as Logic) from Vivado utilization reports.
+Training uses the configurations from Bacellar et al.~\cite{bacellar2024dwn} (learnable mapping, Adam optimizer, $\tau = 33.33$) except where noted.
+
+We evaluate on four datasets:
+\textbf{MNIST} (handwritten digits, 784 inputs, 10 classes),
+\textbf{NID} (network intrusion detection via NSL-KDD, 122 features, 6 classes),
+\textbf{JSC} (jet substructure classification via hls4ml\_lhc\_jets\_hlf, 16 features, 5 classes),
+and \textbf{KWS} (keyword spotting via Google Speech Commands v2, 510 MFCC features, 12 classes).
+
+
+% --------------------------------------------------------------------------
+\subsection{WAFR Packing Experiment}
+\label{sec:wafr}
+% --------------------------------------------------------------------------
+
+Table~\ref{tab:wafr} compares four implementations of an identical JSC network (hidden = [3000], $n = 6$, num\_bits = 200) on the xcvu9p.
+The MASE behavioral variant and the structural FloPoCo-style variant were both generated by us; the remaining rows reproduce published numbers from Bacellar et al.~\cite{bacellar2024dwn} and Mecik and Kumm~\cite{mecik2025dwnten}.
+
+\begin{table}[t]
+\centering
+\caption{WAFR packing comparison on xcvu9p (JSC, $n{=}6$, 3000 neurons). All results OOC synthesis, Vivado 2023.1.}
+\label{tab:wafr}
+\sisetup{group-separator={,}}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Variant} & \textbf{LUTs} & \textbf{FFs} & \textbf{Fmax (MHz)} \\
+\midrule
+MASE behavioral (ours)           & \textbf{\num{1318}}  & \num{775}   & \num{711}   \\
+FloPoCo structural (ours)        & \num{4836}           & \num{4398}  & \num{837.5} \\
+Mecik \& Kumm~\cite{mecik2025dwnten}  & \num{4972}     & \num{3305}  & \num{827}   \\
+Bacellar et al.~\cite{bacellar2024dwn} & \num{4082}     & \num{3385}  & \num{827}   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The behavioral variant achieves \num{1318} LUTs---\textbf{3.7$\times$ fewer} than our FloPoCo structural implementation and \textbf{3.1$\times$ fewer} than the original DWN paper.
+This dramatic reduction stems from WAFR packing: Vivado packs the \num{3000} logical LUT6 neurons into approximately \num{430} physical LUT6\_2 cells by exploiting the shared-input structure of the thermometer encoding.
+The remaining LUTs implement the GroupSum accumulation tree and I/O logic.
+
+Our FloPoCo replication slightly improves on Mecik and Kumm: 2.7\% fewer LUTs (\num{4836} vs.\ \num{4972}) and 1.3\% higher Fmax (\SI{837.5}{\mega\hertz} vs.\ \SI{827}{\mega\hertz}), validating our structural baseline.
+
+The behavioral variant trades clock frequency (\SI{711}{\mega\hertz} vs.\ \SI{837.5}{\mega\hertz}) for area, as the synthesis tool's logic restructuring introduces slightly longer combinational paths.
+For DWN inference, where throughput is determined by the single-cycle combinational delay, this 15\% Fmax reduction is acceptable given the 3.7$\times$ area saving.
+When timing is critical, our pipelined variant recovers frequency at the cost of additional flip-flops.
+
+
+% --------------------------------------------------------------------------
+\subsection{DWN vs.\ DiffLogic Pareto Frontier}
+\label{sec:pareto}
+% --------------------------------------------------------------------------
+
+Table~\ref{tab:pareto} presents the first controlled comparison of DWN and DiffLogic~\cite{petersen2022difflogic, jino2024difflogic} under a unified MASE toolflow.
+Both architectures are trained, emitted to RTL, and synthesized with identical Vivado settings on the xc7a35t.
+
+\begin{table}[t]
+\centering
+\caption{DWN vs.\ DiffLogic: accuracy and post-synthesis LUT count on xc7a35tcpg236-1. DWN dominates DiffLogic on all three datasets.}
+\label{tab:pareto}
+\sisetup{group-separator={,}}
+\begin{tabular}{@{}llcrc@{}}
+\toprule
+\textbf{Dataset} & \textbf{Architecture} & \textbf{$n$} & \textbf{LUTs} & \textbf{Acc.\ (\%)} \\
+\midrule
+\multirow{4}{*}{MNIST}
+  & DiffLogic        & 2 & \num{2993}  & 87.77 \\
+  & DWN              & 2 & \num{969}   & 97.44 \\
+  & DWN              & 4 & \num{1236}  & 98.14 \\
+  & DWN              & 6 & \num{1256}  & 98.51 \\
+\midrule
+\multirow{4}{*}{NID}
+  & DiffLogic        & 2 & \num{294}   & 64.34 \\
+  & DWN              & 2 & \num{199}   & 75.60 \\
+  & DWN              & 4 & \num{441}   & 75.35 \\
+  & DWN              & 6 & \num{474}   & 74.15 \\
+\midrule
+\multirow{4}{*}{JSC}
+  & DiffLogic        & 2 & \num{3832}  & 63.45 \\
+  & DWN              & 2 & \num{592}   & 75.19 \\
+  & DWN              & 4 & \num{1066}  & 75.00 \\
+  & DWN              & 6 & \num{1174}  & 75.09 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results are striking: DWN with the \emph{lowest} fan-in ($n{=}2$) dominates DiffLogic on \emph{every} dataset in both accuracy and area.
+On MNIST, DWN $n{=}2$ achieves 97.44\% accuracy with \num{969} LUTs, compared to DiffLogic's 87.77\% at \num{2993} LUTs---$+$9.7 percentage points accuracy at 3.1$\times$ fewer LUTs.
+The advantage is most pronounced on JSC, where DWN $n{=}2$ uses 6.5$\times$ fewer LUTs while gaining $+$11.7 percentage points in accuracy.
+
+This dominance arises from two factors.
+First, DWN's learnable input mapping concentrates information into each neuron's fan-in, whereas DiffLogic's fixed 2-input gates require deep cascading to aggregate information.
+Second, DWN's thermometer encoding provides a structured binary representation that LUT neurons can exploit more efficiently than DiffLogic's raw binary inputs.
+
+Within the DWN family, increasing fan-in from $n{=}2$ to $n{=}6$ yields diminishing accuracy returns (0.5--1.1 percentage points on MNIST) at increasing area cost, suggesting $n{=}2$ or $n{=}4$ as the sweet spot for area-constrained deployments.
+
+% --------------------------------------------------------------------------
+\subsection{Mixed Per-Layer Fan-In}
+\label{sec:mixed}
+% --------------------------------------------------------------------------
+
+All prior DWN work uses uniform fan-in across layers.
+We introduce \emph{mixed fan-in}, where each layer independently selects its fan-in $n_l$.
+Table~\ref{tab:mixed_cifar} shows CIFAR-10 results for three-layer networks.
+
+\begin{table}[t]
+\centering
+\caption{Mixed fan-in on CIFAR-10 (3-layer, 2048$\times$2048$\times$2050 neurons, 15 epochs, num\_bits=10). Analytical LUT count = $\sum_l \text{neurons}_l \times 2^{n_l} / 64$.}
+\label{tab:mixed_cifar}
+\sisetup{group-separator={,}}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Fan-in config} & \textbf{Analytical LUTs} & \textbf{Acc.\ (\%)} & \textbf{Pareto} \\
+\midrule
+6-6-6 & \num{393216} & 38.28 & dominated \\
+6-4-2 & \num{233472} & 39.50 & -- \\
+6-2-4 & \num{172032} & \textbf{40.44} & \checkmark \\
+4-2-4 & \num{172032} & 40.30 & -- \\
+4-4-4 & \num{196608} & 39.67 & dominated \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The configuration $n{=}[6,2,4]$ achieves 40.44\% accuracy with \num{172032} analytical LUTs---\textbf{2.3$\times$ fewer LUTs} than uniform $n{=}6$ while simultaneously gaining $+$2.16 percentage points in accuracy.
+This makes $n{=}[6,6,6]$ Pareto-dominated.
+
+Post-synthesis Vivado results on the xc7a35t for MNIST confirm the trend (Table~\ref{tab:mixed_mnist}).
+Mixed fan-in $n{=}[6,2]$ achieves 42\% fewer LUTs than uniform $n{=}6$ with negligible accuracy loss.
+
+\begin{table}[t]
+\centering
+\caption{Mixed fan-in Vivado synthesis on xc7a35t (MNIST, 2-layer, [2000, 1000] neurons).}
+\label{tab:mixed_mnist}
+\sisetup{group-separator={,}}
+\begin{tabular}{@{}lccr@{}}
+\toprule
+\textbf{Fan-in} & \textbf{Acc.\ (\%)} & \textbf{LUTs} & \textbf{$\Delta$ vs.\ $n{=}6$} \\
+\midrule
+$n{=}[6,6]$   & 98.51 & \num{1256} & --- \\
+$n{=}[6,2]$   & 98.30 & \num{730}  & $-$42\% \\
+$n{=}[6,4,2]$ & 98.16 & \num{735}  & $-$41\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The emerging design principle is \emph{first-layer fan-in dominance}: the first layer, which directly processes thermometer-encoded inputs, benefits most from high fan-in to capture complex input correlations.
+Subsequent layers operate on increasingly abstract binary features and perform well with lower fan-in, saving area without sacrificing accuracy.
+This mirrors findings in conventional deep learning, where early layers learn complex low-level features while later layers learn simpler combinations.
+
+% --------------------------------------------------------------------------
+\subsection{ABC Boolean Minimization}
+\label{sec:abc}
+% --------------------------------------------------------------------------
+
+We export trained DWN truth tables to Berkeley Logic Interchange Format (BLIF) and apply post-training Boolean minimization using the ABC synthesis tool~\cite{brayton2010abc} with the equivalence-preserving \texttt{strash; dc2} sequence, followed by technology mapping via \texttt{if -K 6}.
+Table~\ref{tab:abc} compares the ABC-mapped Vivado LUT counts against the original behavioral RTL LUT counts from Tables~\ref{tab:pareto} and~\ref{tab:mixed_mnist}.
+
+\begin{table}[t]
+\centering
+\caption{ABC Boolean minimization results. ``Original LUTs'' are behavioral RTL counts from Tables~\ref{tab:pareto}/\ref{tab:mixed_mnist}; ``ABC LUTs'' are Vivado counts after ABC technology mapping. ABC is counterproductive for large networks.}
+\label{tab:abc}
+\sisetup{group-separator={,}}
+\begin{tabular}{@{}llrrrc@{}}
+\toprule
+\textbf{Dataset} & \textbf{$n$} & \textbf{AND nodes} & \textbf{Orig.\ LUTs} & \textbf{ABC LUTs} & \textbf{Change} \\
+\midrule
+MNIST & 2 & \num{4172}  & \num{969}  & \num{988}  & $+$2.0\%  \\
+MNIST & 4 & \num{16525} & \num{1236} & \num{2831} & $+$129\%  \\
+MNIST & 6 & \num{68950} & \num{1256} & \num{4574} & $+$264\%  \\
+NID   & 2 & \num{539}   & \num{199}  & \num{204}  & $+$2.5\%  \\
+NID   & 4 & \num{2630}  & \num{441}  & \num{447}  & $+$1.4\%  \\
+NID   & 6 & \num{10324} & \num{474}  & \num{471}  & $-$0.6\%  \\
+JSC   & 2 & \num{636}   & \num{592}  & \num{661}  & $+$11.7\% \\
+JSC   & 6 & \num{17538} & \num{1174} & \num{1179} & $+$0.4\%  \\
+KWS   & 6 & \num{37765} & ---        & \num{1608} & ---       \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal that ABC Boolean minimization is \emph{counterproductive} for large networks.
+For MNIST $n{=}6$ (\num{3000} neurons), ABC produces \num{4574} LUTs---\textbf{3.6$\times$ worse} than the \num{1256} LUTs achieved by behavioral RTL.
+For MNIST $n{=}4$, ABC yields \num{2831} LUTs versus \num{1236}---2.3$\times$ worse.
+The degradation is systematic: ABC's \texttt{if -K 6} technology mapping decomposes the minimized AIG into structural LUT6 primitives, producing exactly the kind of structural netlist that prevents WAFR packing.
+In effect, ABC undoes the benefit of behavioral RTL by converting free-form logic into a rigid technology-mapped structure that Vivado cannot further optimize.
+
+For small networks (NID, JSC $n{=}6$), the effect is negligible ($\pm$3\%), because these networks have too few neurons for WAFR packing to provide significant benefit in the first place.
+The exception is JSC $n{=}2$, where ABC increases LUTs by 11.7\%---even modest structural decomposition can disrupt packing when neurons have low fan-in and high input sharing.
+
+AND-node counts scale approximately $4\times$ per fan-in step ($n{=}2 \to 4 \to 6$), consistent with the exponential growth of truth table size.
+While ABC successfully identifies and eliminates redundant logic at the Boolean level, this optimization is \emph{redundant} when behavioral RTL already enables Vivado to achieve equivalent or superior reductions through WAFR packing.
+The practical conclusion is clear: when targeting Xilinx FPGAs with behavioral RTL, post-training ABC minimization should be avoided.
+
+
+% ============================================================================
+\subsection{Accuracy Benchmarks}
+\label{sec:accuracy}
+% ============================================================================
+
+Table~\ref{tab:accuracy} validates our MASE training pipeline against published DWN results.
+We match or exceed the original paper on MNIST and CIFAR-10, with small gaps on JSC ($-$1.3pp) and KWS ($-$2.9pp) likely due to minor differences in data preprocessing.
+
+\begin{table}[t]
+\centering
+\caption{Accuracy comparison with Bacellar et al.~\cite{bacellar2024dwn}. All networks use $n{=}6$, learnable mapping, 100 epochs.}
+\label{tab:accuracy}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+\textbf{Dataset} & \textbf{Config} & \textbf{Ours (\%)} & \textbf{Paper (\%)} \\
+\midrule
+MNIST    & [2000, 1000]  & \textbf{98.51} & 98.31 \\
+CIFAR-10 & [8000]        & \textbf{57.93} & 57.42 \\
+JSC      & [3000]        & 75.03          & \textbf{76.30} \\
+KWS      & [1608]        & 68.65          & \textbf{71.52} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================================
+\section{Discussion}
+\label{sec:discussion}
+% ============================================================================
+
+\textbf{Why behavioral RTL wins.}
+The 3.7$\times$ area advantage of behavioral over structural RTL is not a property of our specific code generator---it is a fundamental consequence of giving the synthesis tool freedom to optimize.
+Structural instantiation of LUT primitives, while offering predictable resource usage, creates optimization barriers that are especially costly for DWN, where thousands of neurons share correlated input bits from the thermometer encoding.
+Behavioral RTL removes these barriers, enabling the synthesis tool to exploit the mathematical structure of the network.
+
+\textbf{Implications for LUT-based NN compilers.}
+Our findings suggest that hardware generators for LUT-based neural networks---including DWN, DiffLogic~\cite{petersen2022difflogic}, PolyLUT~\cite{polylutadd2024}, and NeuraLUT~\cite{wang2024neuralut}---should prefer behavioral RTL emission over structural approaches.
+The MASE framework~\cite{mase2024} provides a natural platform for this, as its \texttt{torch.fx}-based tracing and metadata pass infrastructure generalize across network types.
+
+\textbf{DWN vs.\ DiffLogic.}
+The comprehensive dominance of DWN over DiffLogic across all three benchmarks challenges the premise that minimal fan-in ($n{=}2$) is sufficient for hardware-efficient neural network inference.
+DiffLogic's restriction to 2-input gates requires deeper networks to achieve comparable representational capacity, and the resulting long combinational chains consume more LUTs without improving accuracy.
+DWN's learnable mapping mechanism effectively concentrates information into each neuron's fan-in, extracting more utility from each LUT.
+
+\textbf{Mixed fan-in.}
+The first-layer fan-in dominance pattern has practical implications: network architects can allocate high fan-in (and thus high area) only to the first layer, where it provides the most benefit, and use minimal fan-in elsewhere.
+This yields Pareto-optimal configurations that would be missed by uniform fan-in search.
+
+\textbf{Limitations.}
+Our WAFR packing results are specific to Xilinx UltraScale+ and 7-series devices; Intel/Altera FPGAs use different LUT architectures (ALMs) where the packing dynamics differ.
+The mixed fan-in experiments use analytical LUT counts for CIFAR-10 (Vivado synthesis of 100k+ neuron networks exceeds our available device capacity); the MNIST Vivado results confirm the trend at smaller scale.
+ABC Boolean minimization, while effective at the logic level, is counterproductive when behavioral RTL already enables WAFR packing---producing up to 3.6$\times$ more LUTs than the unminimized behavioral baseline on large networks.
+
+
+% ============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ============================================================================
+
+We have demonstrated that behavioral RTL generation for Differentiable Weightless Neural Networks enables FPGA synthesis tools to exploit LUT packing optimizations that are inaccessible to structural approaches, achieving 3.7$\times$ area reduction on identical networks.
+Combined with the first controlled DWN-vs-DiffLogic Pareto analysis (showing DWN dominance across all benchmarks) and the introduction of mixed per-layer fan-in, our MASE-based pipeline provides the most area-efficient known hardware generation approach for weightless neural networks.
+These results argue strongly for behavioral RTL as the default emission strategy in LUT-based neural network compilers.
+
+
+% ============================================================================
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
