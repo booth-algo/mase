@@ -3,7 +3,106 @@
 **Goal**: Find the diff in LUT usage between MASE-generated DWN RTL and the numbers
 reported in Bacellar et al. (arXiv:2410.11112, ICML 2024).
 
-**Last updated**: 2026-03-12
+**Last updated**: 2026-03-14
+
+---
+
+## Paper-Scope Results (2026-03-14) — BEST MATCH TO PAPER
+
+**Scope**: `dwn_top_paper_scope` = `dwn_top_clocked` (LUT layers + inter-layer FFs) + `fixed_dwn_groupsum_pipelined` (2-stage GroupSum). **NO thermometer encoder** — matches Table 2 OOC scope from Bacellar et al. exactly.
+
+**Key finding**: Pipelined GroupSum (2-stage) fixes the Fmax gap. WAFR packing reduces LUT count below paper.
+
+### MNIST lg (hidden=[2000,1000], n=6, z=3) — xcvu9p-flgb2104-2-i, Vivado 2023.1, Flow_PerfOptimized_high
+
+| Clock target | LUTs | FFs | Fmax | vs paper Fmax |
+|---|---|---|---|---|
+| 1.21 ns (827 MHz) | 2,594 | 1,742 | 765 MHz | 92.5% |
+| **1.15 ns (869 MHz)** | **2,655** | **1,752** | **791 MHz** | **95.6%** ← best |
+| 1.10 ns (909 MHz) | — | — | 779 MHz | 94.2% |
+| 1.00 ns (1000 MHz) | 2,758 | 1,752 | 746 MHz | 90.2% |
+| **Paper (Table 2)** | **4,082** | **3,385** | **827 MHz** | — |
+
+### Key Analysis
+
+- **Fmax gap CLOSED**: 791 MHz vs paper 827 MHz → **only 4.4% below paper**
+  - Previous `full_pipeline_top_clocked`: 301 MHz (0.36× paper) — GroupSum was critical path
+  - New `dwn_top_paper_scope` with 2-stage pipelined GroupSum: **791 MHz (0.96× paper)**
+- **LUT count**: 2,655 vs paper 4,082 → **35% fewer LUTs** (WAFR packing — behavioral RTL allows Vivado to pack 2 LUT5-reducible neurons per LUT6)
+- **FF count**: 1,752 vs paper 3,385 → **48% fewer FFs** (WAFR-packed neurons share output FFs; dead thermometer bits pruned)
+- **Scope match confirmed**: Paper's Table 2 OOC excludes thermometer encoder (confirmed by paper text: "assuming data is already available on the board")
+- **Synthesis strategy confirmed**: `Flow_PerfOptimized_high` directives used (ExploreWithRemap → ExtraPostPlacementOpt → AggressiveExplore × 2)
+
+### Root cause of remaining LUT/FF gap vs paper
+
+Paper uses structural FloPoCo LUT6 instantiations → prevents WAFR packing → 4,082 physical LUTs for 3,000 logical neurons.
+MASE behavioral RTL → enables WAFR packing → 2,655 physical LUTs for 3,000 logical neurons.
+MASE is more area-efficient; Fmax is within 4.4%.
+
+---
+
+## Fixed RTL Results (2026-03-14) — INDEX_BITS Bug Resolved
+
+**Critical finding**: The 8-bit index truncation bug has been fixed. `passes.py` now uses `ceil(log2(input_size))` bits and `fixed_dwn_lut_layer_clocked.sv` uses the `INDEX_BITS` parameter. All RTL re-emitted and re-synthesized.
+
+### MNIST (input_features=784, num_bits=3, thermo=2352 bits → INDEX_BITS=12)
+
+| Config | n | LUTs | FFs | WNS (ns) | Fmax (MHz) | vs paper |
+|--------|---|------|-----|----------|------------|---------|
+| mnist_n2 | 2 | **3,167** | 2,787 | 0.972 | ~330 | — |
+| mnist_n4 | 4 | **4,442** | 3,328 | 1.406 | ~386 | — |
+| baseline_n6 | **6** | **4,769** | **5,832** | **0.675** | **~301** | **paper: 4,082 / 3,385 / 827 MHz** |
+| mixed_n6_2 | [6,2] | **4,317** | 3,209 | 1.312 | ~372 | vs n=6: −9% LUTs, +24% Fmax |
+| mixed_n6_4_2 | [6,4,2] | **4,234** | 3,735 | 1.520 | ~403 | vs n=6: −11% LUTs, +34% Fmax |
+
+### CIFAR-10 (input_features=3072, num_bits=2, thermo=6144 bits → INDEX_BITS=13; or num_bits=10, INDEX_BITS=15)
+
+| Config | n | LUTs | FFs | WNS (ns) | Fmax (MHz) |
+|--------|---|------|-----|----------|------------|
+| cifar10_50ep (n=6, z=2) | 6 | **13,626** | 8,768 | 0.208 | ~264 |
+| cifar10_n6_4 (n=[6,4], z=10) | [6,4] | **14,368** | 14,221 | 0.782 | ~311 |
+| cifar10_n6_2_4 (n=[6,2,4], z=10) | [6,2,4] | **14,579** | 15,397 | 0.185 | ~262 |
+
+### NID (input_features=122, num_bits=3, thermo=366 bits → L0 INDEX_BITS=9, L1 INDEX_BITS=8)
+
+| Config | n | LUTs | FFs | WNS (ns) | Fmax (MHz) |
+|--------|---|------|-----|----------|------------|
+| nid_n2 | 2 | **249** | 154 | 1.895 | ~475 |
+| nid_n4 | 4 | **409** | 267 | 1.745 | ~443 |
+| nid_n6 | 6 | **490** | 316 | 2.038 | ~510 |
+
+### JSC (input_features=16, num_bits=200, thermo=3200 bits → INDEX_BITS=12)
+
+| Config | n | LUTs | FFs | WNS (ns) | Fmax (MHz) | vs paper |
+|--------|---|------|-----|----------|------------|---------|
+| jsc_n2 | 2 | **1,883** | 850 | 0.640 | ~298 | — |
+| jsc_n4 | 4 | **4,055** | 1,947 | 0.448 | ~282 | — |
+| jsc_learnable_100ep | **6** | **5,501** | **2,564** | **0.451** | **~282** | **paper: 4,972 / 3,305 / 827 MHz** |
+
+### KWS (input_features=510, num_bits=8, thermo=4080 bits → INDEX_BITS=12)
+
+| Config | n | LUTs | FFs | WNS (ns) | Fmax (MHz) |
+|--------|---|------|-----|----------|------------|
+| kws_100ep | 6 | **4,370** | 2,120 | 1.100 | ~345 |
+
+### LUT Gap Analysis vs Paper (CORRECTED — with fixed RTL)
+
+| Dataset | Config | Our LUTs (fixed) | Paper LUTs | Gap | Previous buggy | Bug impact |
+|---------|--------|-----------------|-----------|-----|----------------|-----------|
+| MNIST | n=6 lg | **4,769** | **4,082** | **1.17×** more | 1,285 (3.18× fewer) | **Index bug caused 3.71× LUT under-count** |
+| JSC | n=6 lg | **5,501** | **4,972** | **1.11×** more | 3,792 (1.31× fewer) | Bug had smaller impact (JSC indices < 256 in some layers) |
+
+**The INDEX_BITS fix largely resolves the LUT gap mystery. Remaining difference (~17% for MNIST) is likely due to synthesis strategy (PerformanceOptimized vs Flow_PerfOptimized_high).**
+
+### Fmax Gap Analysis (fixed RTL)
+
+| Dataset | Our Fmax | Paper Fmax | Ratio | Notes |
+|---------|----------|-----------|-------|-------|
+| MNIST n=6 | ~301 MHz | 827 MHz | 0.36× | GroupSum critical path dominates |
+| JSC n=6 | ~282 MHz | 827 MHz | 0.34× | Wide thermometer (200-bit) limits routing |
+| MNIST mixed [6,4,2] | ~403 MHz | — | — | Best Fmax among MNIST configs |
+
+Fmax gap vs paper unchanged — still ~3× slower due to GroupSum popcount (7-level adder tree). Paper likely uses pipelined popcount.
 
 ---
 

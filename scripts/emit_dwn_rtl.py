@@ -15,9 +15,97 @@ Output directory will contain:
 import argparse
 import os
 import sys
+import types
 
 _src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
 sys.path.insert(0, _src)
+
+# ---------------------------------------------------------------------------
+# Import-chain workaround
+#
+# The dependency chain  chop → chop.nn.quantized → transformers → torchvision
+# crashes at runtime because of a torchvision/torch version mismatch
+# (torchvision::nms kernel not registered).  RTL emission needs neither
+# torchvision nor HuggingFace transformers, so we intercept ALL imports of
+# these packages via a sys.meta_path finder and return harmless stub modules.
+# ---------------------------------------------------------------------------
+
+class _StubModule(types.ModuleType):
+    """Stub module: silently absorbs attribute access and sub-module imports."""
+    _ALLOW_DUNDER = frozenset({
+        "__name__", "__package__", "__path__", "__spec__", "__loader__",
+        "__file__", "__cached__", "__doc__", "__builtins__", "__version__",
+    })
+
+    def __getattr__(self, name):
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        # Return a callable no-op object for class/function stubs
+        class _Noop:
+            def __init__(self, *a, **kw): pass
+            def __call__(self, *a, **kw): return None
+            def __getattr__(self, n): return _Noop()
+            def __repr__(self): return f"<Stub {self.__class__.__name__}>"
+        return _Noop
+
+
+class _StubFinder:
+    """
+    sys.meta_path finder that intercepts ALL torchvision.* and transformers.*
+    imports and replaces them with _StubModule instances.
+    """
+    _STUB_PREFIXES = ("torchvision", "transformers", "optimum")
+
+    def find_module(self, fullname, path=None):
+        for pfx in self._STUB_PREFIXES:
+            if fullname == pfx or fullname.startswith(pfx + "."):
+                return self
+        return None
+
+    def load_module(self, fullname):
+        if fullname in sys.modules:
+            return sys.modules[fullname]
+        m = _StubModule(fullname)
+        m.__path__ = []
+        m.__package__ = fullname.rsplit(".", 1)[0] if "." in fullname else fullname
+        m.__version__ = "0.0.0"
+        # __spec__ must not be None for importlib.util.find_spec checks
+        try:
+            import importlib.util as _iu
+            m.__spec__ = _iu.spec_from_loader(fullname, loader=None)
+        except Exception:
+            pass
+        sys.modules[fullname] = m
+        return m
+
+
+# Install the finder BEFORE importing torch or anything in chop
+sys.meta_path.insert(0, _StubFinder())
+
+# Pre-populate top-level stubs so "from torchvision import ..." doesn't
+# accidentally hit the real (broken) package if it exists on sys.path
+for _top in ("torchvision", "transformers", "optimum"):
+    if _top not in sys.modules:
+        _StubFinder().load_module(_top)
+
+# Provide realistic stubs for the specific symbols mase_graph.py uses:
+#   from transformers import PreTrainedModel
+#   from transformers.utils.fx import symbolic_trace, HFTracer
+class _PreTrainedModel:
+    pass
+
+class _HFTracer:
+    pass
+
+def _hf_symbolic_trace(model, *a, **kw):
+    raise NotImplementedError("HuggingFace symbolic_trace not available in stub mode")
+
+sys.modules["transformers"].PreTrainedModel = _PreTrainedModel
+_tf_utils_fx = _StubFinder().load_module("transformers.utils.fx")
+_tf_utils_fx.HFTracer = _HFTracer
+_tf_utils_fx.symbolic_trace = _hf_symbolic_trace
+
+# ---------------------------------------------------------------------------
 
 import torch
 import torch.nn as nn

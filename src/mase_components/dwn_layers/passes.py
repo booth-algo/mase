@@ -1,27 +1,48 @@
+import math
+
 from chop.passes.graph.analysis.add_metadata.add_hardware_metadata import *
 from chop.passes.graph.utils import get_module_by_name
 from collections import OrderedDict
+
+
+def _index_bits_for(input_size: int) -> int:
+    """
+    Number of bits needed to index into input_size elements.
+
+    Matches SystemVerilog's $clog2(INPUT_SIZE):  ceil(log2(input_size)), min 1.
+    """
+    return max(1, math.ceil(math.log2(max(input_size, 2))))
 
 
 def _pack_dwn_lut_params(lut_layer):
     """
     Pack a trained LUTLayer's indices and contents into Verilog hex bit-vector literals.
 
-    Returns (input_size, output_size, lut_n, indices_hex, contents_hex) where
+    Returns (input_size, output_size, lut_n, index_bits, indices_hex, contents_hex) where
     indices_hex and contents_hex are strings of the form ``"<N>'h<HEX>"`` ready to
     embed directly in a Verilog parameter declaration.
+
+    index_bits is the per-index field width used for packing — must match the INDEX_BITS
+    parameter emitted to fixed_dwn_lut_layer, which uses $clog2(INPUT_SIZE) internally.
+    Using ceil(log2(input_size)) ensures indices are never truncated regardless of
+    network size (fixes the 8-bit truncation bug that limited networks to 255 inputs).
     """
     indices = lut_layer.get_input_indices()   # (output_size, n) int32 tensor
     output_size = lut_layer.output_size
     lut_n = lut_layer.n
     lut_entries = 2 ** lut_n
+    input_size = lut_layer.input_size
 
-    # Pack INPUT_INDICES: indices[i,k] → bits [(i*lut_n+k)*8 +: 8]
+    # Use exactly ceil(log2(input_size)) bits per index — matches $clog2(INPUT_SIZE)
+    index_bits = _index_bits_for(input_size)
+    index_mask = (1 << index_bits) - 1
+
+    # Pack INPUT_INDICES: indices[i,k] → bits [(i*lut_n+k)*index_bits +: index_bits]
     packed_indices = 0
     for i in range(output_size):
         for k in range(lut_n):
-            idx = int(indices[i, k].item()) & 0xFF
-            packed_indices |= idx << ((i * lut_n + k) * 8)
+            idx = int(indices[i, k].item()) & index_mask
+            packed_indices |= idx << ((i * lut_n + k) * index_bits)
 
     # Pack LUT_CONTENTS: contents[i,j] → bit [i*lut_entries + j]
     contents = lut_layer.get_lut_contents()   # (output_size, 2^n) int tensor
@@ -32,12 +53,12 @@ def _pack_dwn_lut_params(lut_layer):
             packed_contents |= bit << (i * lut_entries + j)
 
     # Format as Verilog hex literals with explicit bit-width
-    indices_bits = output_size * lut_n * 8
+    indices_total_bits = output_size * lut_n * index_bits
     contents_bits = output_size * lut_entries
-    indices_hex = f"{indices_bits}'h{packed_indices:0{(indices_bits + 3) // 4}X}"
+    indices_hex = f"{indices_total_bits}'h{packed_indices:0{(indices_total_bits + 3) // 4}X}"
     contents_hex = f"{contents_bits}'h{packed_contents:0{(contents_bits + 3) // 4}X}"
 
-    return lut_layer.input_size, output_size, lut_n, indices_hex, contents_hex
+    return input_size, output_size, lut_n, index_bits, indices_hex, contents_hex
 
 
 def dwn_hardware_metadata_pass(graph, args={}):
@@ -76,13 +97,14 @@ def dwn_hardware_metadata_pass(graph, args={}):
             # INPUT_INDICES / LUT_CONTENTS — which is what fixed_dwn_lut_layer.sv
             # actually expects.
             lut_layer = get_module_by_name(graph.model, node.target)
-            in_sz, out_sz, lut_n, idx_hex, cont_hex = _pack_dwn_lut_params(lut_layer)
+            in_sz, out_sz, lut_n, idx_bits, idx_hex, cont_hex = _pack_dwn_lut_params(lut_layer)
             node.meta["mase"]["hardware"]["verilog_param"] = {
-                "INPUT_SIZE": in_sz,
+                "INPUT_SIZE":  in_sz,
                 "OUTPUT_SIZE": out_sz,
-                "LUT_N": lut_n,
+                "LUT_N":       lut_n,
+                "INDEX_BITS":  idx_bits,
                 "INPUT_INDICES": idx_hex,
-                "LUT_CONTENTS": cont_hex,
+                "LUT_CONTENTS":  cont_hex,
             }
 
     return (graph, None)
