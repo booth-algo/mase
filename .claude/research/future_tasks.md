@@ -2,42 +2,19 @@
 
 ## In Progress
 
-### CIFAR-10 8k Learnable Mapping — Full 100-Epoch Run
-- PID 987098, GPU 0, A6000
-- Epoch 8: 57.03% (paper target: 57.42%)
-- LR decays at epochs 30, 60, 90 — expected to exceed 57.42%
-- Monitor: `python -c "import torch; ckpt=torch.load('mase_output/dwn/best.pt',map_location='cpu'); print(ckpt['epoch'], ckpt['acc'])"`
+### xcvu9p Synthesis Batch (beholder0, 2026-03-14)
+- JSC paper-scope (DWN n=6): `dwn_top_paper_scope` at 1.15 ns target
+- DiffLogic MNIST/NID/JSC: `difflogic_top` at 4.0 ns target
+- Script: `~/dwn_synth/synth_batch_xcvu9p.sh`
+- Log: `~/dwn_synth/batch_synth.log`
 
----
-
-## Vivado Synthesis — DONE (MNIST), PARTIAL (CIFAR-10)
-
-Real CLB LUT counts from Vivado 2023.1 on beholder0 (xcvc1902-viva1596-3HP-e-S):
-
-| Config | LUT_N | CLB LUTs |
-|--------|-------|----------|
-| MNIST baseline_n6 | [6] | 1,256 |
-| MNIST mixed_n6_2 | [6,2] | 889 (−29%) |
-| MNIST mixed_n6_4_2 | [6,4,2] | 705 (−44%) |
-| CIFAR-10 cifar10_n6_4 | [6,4] | 2,027 (untrained) |
-| CIFAR-10 cifar10_n6_2_4 | [6,2,4] | 1,960 (untrained) |
-
-Design is purely combinational — no WNS (no clock domain). Propagation delay TBD.
-
-**Remaining**: Re-synthesise CIFAR-10 configs with trained weights (currently from dummy untrained checkpoint).
+### ABC xcvu9p Re-synthesis (pending)
+- Need to re-synthesize ABC-mapped Verilog on xcvu9p (currently only xc7a35t results)
+- ABC BLIF files already exist for all configs
 
 ---
 
 ## Follow-up Ideas
-
-### DWN vs DiffLogic Controlled Pareto (#1 from logbook)
-- Train DWN n={2,4,6} + DiffLogic n=2 on MNIST/JSC/NID
-- Emit RTL via MASE, synthesise with Vivado
-- Plot accuracy vs LUT count frontier
-- **Status**: Scripts ready. Run training then synthesise.
-  - `test/passes/graph/transforms/difflogic/run_difflogic_training.py` — CLI trainer (MNIST/CIFAR-10)
-  - `scripts/emit_difflogic_rtl.py` — checkpoint → SystemVerilog
-  - `scripts/synth_difflogic.tcl` — Vivado OOC synthesis
 
 ### Post-Training Boolean Minimisation via ABC (#3 from logbook)
 - Export trained LUT truth tables → BLIF format → ABC (`strash; dc2; map`)
