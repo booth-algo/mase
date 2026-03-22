@@ -7,6 +7,7 @@
 #include <torch/extension.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <c10/cuda/CUDAException.h>
 #include <vector>
 
 template <typename T> T ceil_div(const T x, const T y) { return x / y + !!(x % y); }
@@ -58,6 +59,7 @@ torch::Tensor efd_cuda_forward(
         luts_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
         output_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>()
     );
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
 
     cudaDeviceSynchronize();
 
@@ -134,6 +136,7 @@ std::vector<torch::Tensor> efd_cuda_backward(
         input_grad_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>(),
         luts_grad_tensor.packed_accessor64<float, 2, torch::RestrictPtrTraits>()
     );
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
 
     cudaDeviceSynchronize();
 

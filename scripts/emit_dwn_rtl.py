@@ -14,6 +14,7 @@ Output directory will contain:
 """
 import argparse
 import os
+import re
 import sys
 import types
 
@@ -257,8 +258,8 @@ def main():
             top_sv = f.read()
 
         # 2. Substitute module name and layer module references
-        clocked_sv = top_sv.replace("module dwn_top", "module dwn_top_clocked")
-        clocked_sv = clocked_sv.replace("fixed_dwn_lut_layer ", "fixed_dwn_lut_layer_clocked ")
+        clocked_sv = re.sub(r'\bmodule dwn_top\b', 'module dwn_top_clocked', top_sv)
+        clocked_sv = re.sub(r'\bfixed_dwn_lut_layer\b', 'fixed_dwn_lut_layer_clocked', clocked_sv)
 
         # 3. Write dwn_top_clocked.sv
         clocked_top_path = os.path.join(rtl_dir, "dwn_top_clocked.sv")

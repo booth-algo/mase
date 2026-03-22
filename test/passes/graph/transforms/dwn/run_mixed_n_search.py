@@ -35,35 +35,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from chop.nn.dwn import DWNModel
 
-
-# ---------------------------------------------------------------------------
-# Inline copy of compute_area_loss from run_dwn_training.py
-# ---------------------------------------------------------------------------
-
-def compute_area_loss(model):
-    """
-    Hardware-aware regularization for DWN.
-
-    Returns:
-        (entropy_loss: Tensor, area_luts: int)
-    """
-    from chop.nn.dwn.mapping import LearnableMapping
-
-    entropy_loss = torch.tensor(0.0, device=next(model.parameters()).device)
-    area_luts = 0
-
-    for layer in model.lut_layers:
-        area_luts += layer.output_size * (2 ** layer.n)
-
-        if isinstance(layer.mapping, LearnableMapping):
-            W = layer.mapping.weights   # (input_size, output_size * n)
-            tau = getattr(layer.mapping, 'tau', 0.001)
-            probs = torch.softmax(W / tau, dim=0)
-            log_probs = torch.log(probs + 1e-10)
-            entropy = -(probs * log_probs).sum(dim=0).mean()
-            entropy_loss = entropy_loss + entropy
-
-    return entropy_loss, area_luts
+from utils import compute_area_loss
 
 
 # ---------------------------------------------------------------------------

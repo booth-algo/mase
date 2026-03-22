@@ -57,7 +57,17 @@ class EFDFunction(torch.autograd.Function):
         if x.is_cuda and ext is not None:
             output = ext.forward(x, mapping, luts)
         else:
-            raise NotImplementedError("EFDFunction: CPU not implemented. Move tensors to CUDA.")
+            # CPU fallback
+            batch_size = x.shape[0]
+            output_size, two_to_n = luts.shape
+            n = mapping.shape[1]
+            # Gather inputs: x[:, mapping] -> (batch, output_size, n)
+            selected = x[:, mapping]  # (batch, output_size, n)
+            # Convert to address: binary bits to integer
+            powers = (2 ** torch.arange(n, device=x.device)).unsqueeze(0).unsqueeze(0)
+            addresses = (selected * powers).sum(dim=-1).long()  # (batch, output_size)
+            # Look up LUT contents
+            output = luts[torch.arange(output_size, device=x.device).unsqueeze(0), addresses]
         ctx.save_for_backward(x, mapping, luts, alpha, beta)
         return output
 
@@ -115,16 +125,27 @@ class LUTLayer(torch.nn.Module):
         super().__init__()
 
         # Input Check
-        assert input_size > 0
-        assert output_size > 0
-        assert n > 0
-        assert mapping in ('arange', 'random', 'learnable') or (
-            isinstance(mapping, torch.Tensor) and
-            mapping.dtype == torch.int32 and
-            mapping.shape == torch.Size([output_size, n])
-        )
-        assert isinstance(ste, bool)
-        assert isinstance(clamp_luts, bool)
+        if not input_size > 0:
+            raise ValueError(f"input_size must be > 0, got {input_size}")
+        if not output_size > 0:
+            raise ValueError(f"output_size must be > 0, got {output_size}")
+        if not n > 0:
+            raise ValueError(f"n must be > 0, got {n}")
+        if not (
+            mapping in ('arange', 'random', 'learnable') or (
+                isinstance(mapping, torch.Tensor) and
+                mapping.dtype == torch.int32 and
+                mapping.shape == torch.Size([output_size, n])
+            )
+        ):
+            raise ValueError(
+                f"mapping must be 'arange', 'random', 'learnable', or a (output_size, n) "
+                f"int32 Tensor; got {mapping!r}"
+            )
+        if not isinstance(ste, bool):
+            raise ValueError(f"ste must be a bool, got {type(ste)}")
+        if not isinstance(clamp_luts, bool):
+            raise ValueError(f"clamp_luts must be a bool, got {type(clamp_luts)}")
 
         # Vars
         self.input_size = int(input_size)
@@ -140,8 +161,10 @@ class LUTLayer(torch.nn.Module):
             beta = 0.25/0.75
         self.alpha = torch.tensor(alpha)
         self.beta = torch.tensor(beta)
-        assert self.alpha.dtype in (torch.float16, torch.float32, torch.float64)
-        assert self.beta.dtype in (torch.float16, torch.float32, torch.float64)
+        if self.alpha.dtype not in (torch.float16, torch.float32, torch.float64):
+            raise ValueError(f"alpha must be a float tensor, got dtype {self.alpha.dtype}")
+        if self.beta.dtype not in (torch.float16, torch.float32, torch.float64):
+            raise ValueError(f"beta must be a float tensor, got dtype {self.beta.dtype}")
 
         # Mapping
         if isinstance(mapping, torch.Tensor):
