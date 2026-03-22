@@ -144,7 +144,7 @@ def build_golden_reference(ckpt_path: str):
     """
     from chop.nn.dwn.model import DWNModel
 
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     cfg = ckpt["model_config"]
     print(f"[golden] Checkpoint config: {cfg}")
 
@@ -211,7 +211,7 @@ def load_mnist_test(num_samples: int):
         f"MNIST cache not found: {cache_path}\n"
         f"Run the DWN training script once with --dataset mnist to populate it."
     )
-    cached = torch.load(cache_path, map_location="cpu")
+    cached = torch.load(cache_path, map_location="cpu", weights_only=True)
     X_all, y_all = cached["X"], cached["y"]
 
     # Standard split: first 60 000 = train, last 10 000 = test

@@ -138,7 +138,7 @@ def main():
         sys.exit(1)
 
     print(f"Loading checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     cfg = ckpt["model_config"]
     print(f"  Config: hidden_sizes={cfg['hidden_sizes']}, lut_n={cfg['lut_n']}, "
           f"num_bits={cfg['num_bits']}, mapping_first={cfg['mapping_first']}")

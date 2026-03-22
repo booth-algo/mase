@@ -29,8 +29,10 @@ def _get_efd_cuda():
         try:
             from .cuda_ext import get_cuda_ext
             _efd_cuda_ext = get_cuda_ext()
-        except Exception:
-            pass
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Failed to load EFD CUDA extension: {e}")
+            _efd_cuda_ext = None
     return _efd_cuda_ext
 
 

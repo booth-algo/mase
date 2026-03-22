@@ -168,7 +168,7 @@ def main():
         sys.exit(1)
 
     print(f"Loading checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     cfg  = ckpt["model_config"]
     print(f"  num_neurons={cfg['num_neurons']}, num_layers={cfg['num_layers']}, "
           f"input_features={cfg['input_features']}, num_classes={cfg['num_classes']}, "

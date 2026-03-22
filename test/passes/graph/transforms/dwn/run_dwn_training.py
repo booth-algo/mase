@@ -264,7 +264,7 @@ def _load_mnist_openml(dataset_name, args):
 
     if os.path.exists(cache_file):
         print(f"Loading {dataset_name} features from cache: {cache_file}")
-        cached = torch.load(cache_file, map_location="cpu")
+        cached = torch.load(cache_file, map_location="cpu", weights_only=True)
         X_all, y_all = cached["X"], cached["y"]
     else:
         print(f"Fetching {openml_name} from OpenML (one-time download)...")
@@ -435,7 +435,7 @@ def _load_kws(args):
     # Return cached features if available
     if os.path.exists(features_cache):
         print(f"Loading KWS features from cache: {features_cache}")
-        cached = torch.load(features_cache, map_location="cpu")
+        cached = torch.load(features_cache, map_location="cpu", weights_only=True)
         X_train, y_train = cached["X_train"], cached["y_train"]
         X_test,  y_test  = cached["X_test"],  cached["y_test"]
         num_features = X_train.shape[1]
@@ -643,7 +643,7 @@ def _load_toyadmos(args):
     features_cache = os.path.join(cache_dir, "toyadmos_features.pt")
     if os.path.exists(features_cache):
         print(f"Loading cached features from {features_cache}...")
-        cached = torch.load(features_cache, map_location="cpu")
+        cached = torch.load(features_cache, map_location="cpu", weights_only=True)
         X_train = cached["X_train"]
         y_train = cached["y_train"]
         X_test  = cached["X_test"]
@@ -759,7 +759,7 @@ def eval_checkpoint(args, device):
         return 1
 
     print(f"Loading checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
 
     cfg = ckpt.get("model_config")
     if cfg is None:
