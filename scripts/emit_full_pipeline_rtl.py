@@ -323,7 +323,7 @@ def main():
 
     if os.path.exists(ckpt_path):
         print(f"Loading checkpoint: {ckpt_path}")
-        ckpt = torch.load(ckpt_path, map_location="cpu")
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
         cfg = ckpt["model_config"]
         state = ckpt["model_state_dict"]
 

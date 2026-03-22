@@ -62,7 +62,7 @@ def parse_args():
 
 def load_model(ckpt_path: str) -> "DWNModel":
     print(f"Loading checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     cfg = ckpt["model_config"]
     print(
         f"  Config: hidden_sizes={cfg['hidden_sizes']}, lut_n={cfg['lut_n']}, "

@@ -137,7 +137,7 @@ def main():
         return 1
 
     print(f"Loading checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
 
     epoch = ckpt.get("epoch", "?")
     acc   = ckpt.get("acc",   float("nan"))
