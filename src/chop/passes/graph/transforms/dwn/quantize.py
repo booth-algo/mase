@@ -150,12 +150,13 @@ def dwn_transform_pass(graph, pass_args: dict = None) -> tuple:
     pass_args = dict(pass_args)  # don't mutate caller's dict
     by = pass_args.pop("by", "type")
 
-    if by == "type":
-        graph = _graph_iterator_dwn_by_type(graph, pass_args)
-    elif by == "name":
-        graph = _graph_iterator_dwn_by_name(graph, pass_args)
-    else:
-        raise ValueError(f'Unsupported DWN "by": {by}')
+    match by:
+        case "type":
+            graph = _graph_iterator_dwn_by_type(graph, pass_args)
+        case "name":
+            graph = _graph_iterator_dwn_by_name(graph, pass_args)
+        case _:
+            raise ValueError(f'Unsupported DWN "by": {by}')
 
     graph.model = torch.fx.GraphModule(graph.model, graph.fx_graph)
     return graph, {}
