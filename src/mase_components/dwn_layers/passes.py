@@ -1,6 +1,9 @@
 import math
 
-from chop.passes.graph.analysis.add_metadata.add_hardware_metadata import *
+from chop.passes.graph.analysis.add_metadata.add_hardware_metadata import (
+    add_verilog_param,
+    add_extra_verilog_param,
+)
 from chop.passes.graph.utils import get_module_by_name
 from collections import OrderedDict
 
