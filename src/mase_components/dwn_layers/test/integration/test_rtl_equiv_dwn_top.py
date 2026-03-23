@@ -10,20 +10,15 @@ import random
 import sys
 import tempfile
 
+from dwn_test_utils import setup_sys_path, setup_conda_path, sw_forward
+
+setup_sys_path()
+setup_conda_path()
+
 import cocotb_test.simulator as simulator
 import pytest
 import torch
 import torch.nn as nn
-
-# sys.path + conda env setup
-
-_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-
-_CONDA_ENV_BIN = os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")
-if os.path.isdir(_CONDA_ENV_BIN) and _CONDA_ENV_BIN not in os.environ.get("PATH", ""):
-    os.environ["PATH"] = _CONDA_ENV_BIN + os.pathsep + os.environ.get("PATH", "")
 
 RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../rtl"))
 
@@ -45,29 +40,6 @@ class DWNHardwareCore(nn.Module):
         for layer in self.lut_layers:
             x = layer(x)
         return x
-
-
-# Pure-Python SW golden model (no CUDA / EFD required)
-
-def sw_forward(x_bits, lut_layers):
-    """
-    Evaluate DWN stack via direct LUT lookup.
-
-    Args:
-        x_bits: list[int] of 0/1, length = input_size of first layer
-        lut_layers: list of LUTLayer (eval mode)
-    Returns:
-        list[int] of 0/1, length = output_size of last layer
-    """
-    for layer in lut_layers:
-        indices = layer.get_input_indices().tolist()   # (out, n) ints
-        contents = layer.get_lut_contents().tolist()   # (out, 2^n) ints
-        out = []
-        for i in range(layer.output_size):
-            addr = sum(x_bits[indices[i][k]] << k for k in range(layer.n))
-            out.append(int(contents[i][addr]))
-        x_bits = out
-    return x_bits
 
 
 # Test
