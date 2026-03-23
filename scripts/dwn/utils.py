@@ -18,6 +18,7 @@ def compute_area_loss(model):
        Pareto analysis between area and accuracy.
 
     Uses chunked softmax computation to avoid OOM on large LearnableMapping layers
+    (e.g. 8k neurons on A6000 48GB).
 
     Returns:
         (entropy_loss: Tensor, area_luts: int)

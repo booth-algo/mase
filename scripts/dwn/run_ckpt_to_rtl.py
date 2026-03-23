@@ -15,7 +15,7 @@ import argparse
 # sys.path setup — must come before any chop/mase_components imports
 #
 
-_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
+_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
@@ -195,7 +195,7 @@ def main():
     else:
         ckpt_stem = os.path.splitext(os.path.basename(ckpt_path))[0]
         _default_base = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../../../../../mase_output/dwn")
+            os.path.join(os.path.dirname(__file__), "../../mase_output/dwn")
         )
         out_dir = os.path.join(_default_base, f"{ckpt_stem}_rtl")
 
