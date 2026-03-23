@@ -1,4 +1,3 @@
-
 import torch
 
 from numpy import ndarray

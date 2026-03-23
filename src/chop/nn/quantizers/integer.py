@@ -1,4 +1,3 @@
-
 from math import ceil, log2
 
 from numpy import ndarray
