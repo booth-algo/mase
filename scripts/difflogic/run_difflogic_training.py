@@ -22,7 +22,7 @@ import types
 import argparse
 
 # sys.path / sys.modules stubs — avoid pulling in the heavy mase __init__.py
-_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
+_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 sys.path.insert(0, _src)
 
 for _pkg in ['chop', 'chop.nn']:
@@ -348,7 +348,7 @@ def build_model(input_features, num_classes, args, device):
 
 
 def _ckpt_dir():
-    return os.path.join(os.path.dirname(__file__), "../../../../../mase_output/difflogic")
+    return os.path.join(os.path.dirname(__file__), "../../mase_output/difflogic")
 
 
 def _model_config(args, input_features, num_classes):

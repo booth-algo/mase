@@ -18,7 +18,7 @@ import os
 import types
 import argparse
 
-_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
+_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 sys.path.insert(0, _src)
 
 for _pkg in ['chop', 'chop.nn']:
@@ -102,7 +102,7 @@ def parse_args():
 
 
 def _ckpt_dir():
-    return os.path.join(os.path.dirname(__file__), "../../../../../mase_output/dwn")
+    return os.path.join(os.path.dirname(__file__), "../../mase_output/dwn")
 
 
 def eval_checkpoint(args, device):

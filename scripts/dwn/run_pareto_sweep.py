@@ -34,7 +34,7 @@ import types
 import argparse
 import csv
 
-_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
+_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 sys.path.insert(0, _src)
 
 for _pkg in ['chop', 'chop.nn']:
@@ -298,7 +298,7 @@ def print_table(results, pareto_flags):
 
 def _output_dir():
     return os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../../mase_output/dwn")
+        os.path.join(os.path.dirname(__file__), "../../mase_output/dwn")
     )
 
 

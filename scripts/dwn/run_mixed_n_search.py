@@ -19,7 +19,7 @@ import itertools
 import random
 import csv
 
-_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
+_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src'))
 sys.path.insert(0, _src)
 
 for _pkg in ['chop', 'chop.nn']:
@@ -379,7 +379,7 @@ def main():
 
     # Save CSV
     out_dir = os.path.join(
-        os.path.dirname(__file__), "../../../../../mase_output/dwn"
+        os.path.dirname(__file__), "../../mase_output/dwn"
     )
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "mixed_n_search_results.csv")
