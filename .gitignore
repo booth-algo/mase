@@ -178,5 +178,8 @@ docs/tutorials/difflogic/data-mnist/
 CLAUDE_STATUS.md
 logbook.md
 
+# Generated test vector configs
+*_uvm_config.json
+
 # Claude Code local config and research notes
 .claude/
