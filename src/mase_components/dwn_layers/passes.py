@@ -89,8 +89,8 @@ def dwn_hardware_metadata_pass(graph, args=None):
             node.meta["mase"]["hardware"]["toolchain"] = "INTERNAL_RTL"
             node.meta["mase"]["hardware"]["module"] = "fixed_dwn_lut_layer"
             node.meta["mase"]["hardware"]["dependence_files"] = [
-                "dwn_layers/rtl/fixed_dwn_lut_neuron.sv",
-                "dwn_layers/rtl/fixed_dwn_lut_layer.sv",
+                "dwn_layers/rtl/fixed/fixed_dwn_lut_neuron.sv",
+                "dwn_layers/rtl/fixed/fixed_dwn_lut_layer.sv",
             ]
             # Reset interface (remove stale BRAM entries from earlier passes)
             node.meta["mase"]["hardware"]["interface"] = {}
@@ -125,7 +125,7 @@ def dwn_hardware_force_fixed_flatten_pass(graph, args=None):
             node.meta["mase"]["hardware"]["toolchain"] = "INTERNAL_RTL"
             node.meta["mase"]["hardware"]["module"] = "fixed_dwn_flatten"
             node.meta["mase"]["hardware"]["dependence_files"] = [
-                "dwn_layers/rtl/fixed_dwn_flatten.sv"
+                "dwn_layers/rtl/fixed/fixed_dwn_flatten.sv"
             ]
             add_verilog_param(node)
             add_extra_verilog_param(node, graph)
@@ -148,7 +148,7 @@ def dwn_hardware_groupsum_pass(graph, args=None):
             node.meta["mase"]["hardware"]["toolchain"] = "INTERNAL_RTL"
             node.meta["mase"]["hardware"]["module"] = "fixed_dwn_groupsum"
             node.meta["mase"]["hardware"]["dependence_files"] = [
-                "dwn_layers/rtl/fixed_dwn_groupsum.sv"
+                "dwn_layers/rtl/fixed/fixed_dwn_groupsum.sv"
             ]
             node.meta["mase"]["hardware"]["interface"] = {}
             add_verilog_param(node)

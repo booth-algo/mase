@@ -181,5 +181,8 @@ logbook.md
 # Generated test vector configs
 *_uvm_config.json
 
+# OMC state files
+.omc/
+
 # Claude Code local config and research notes
 .claude/
