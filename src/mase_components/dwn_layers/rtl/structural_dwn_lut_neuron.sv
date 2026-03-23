@@ -1,5 +1,5 @@
 // structural_dwn_lut_neuron.sv
-// Uses explicit Xilinx LUT6 primitive to prevent WAFR packing.
+// Uses explicit Xilinx LUT6 primitive to prevent LUT combining/packing.
 // Each neuron occupies exactly one LUT6 site.
 // Only supports LUT_N <= 6.
 
