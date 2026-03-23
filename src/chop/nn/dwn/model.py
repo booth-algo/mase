@@ -1,3 +1,4 @@
+# Copied from torch_dwn v1.1.1 (https://github.com/alanbacellar/DWN)
 import torch
 import torch.nn as nn
 
