@@ -27,14 +27,14 @@
 
 ## Final Results (all xcvu9p, post-INDEX_BITS fix)
 
-### 1. WAFR Packing (Paper-Scope, MNIST n=6 [2000,1000])
+### 1. LUT combining (Vivado's optimization that packs pairs of LUT5 functions into LUT6_2 dual-output cells) — Paper-Scope, MNIST n=6 [2000,1000]
 
 | Variant | LUTs | FFs | Fmax |
 |---------|------|-----|------|
 | MASE behavioral (ours) | **2,655** | 1,752 | 791 MHz |
 | Bacellar et al. (structural) | 4,082 | 3,385 | 827 MHz |
 
-**1.54x fewer LUTs**, 95.6% of paper Fmax. WAFR packing enables Vivado to pack pairs of LUT5 neurons sharing common thermometer inputs into single LUT6_2 cells.
+**1.54x fewer LUTs**, 95.6% of paper Fmax. LUT combining enables Vivado to pack pairs of LUT5 neurons sharing common thermometer inputs into single LUT6_2 cells.
 
 ### 2. DWN vs DiffLogic Pareto (Paper-Scope, synth-only)
 
@@ -66,7 +66,7 @@ DWN dominates DiffLogic on MNIST and JSC. JSC n=2: **+11.7pp accuracy at 1.8x fe
 | MNIST n=2 | 995 | 988 | -0.7% |
 | JSC n=6 | 1,178 | 1,179 | +0.1% |
 
-ABC is **counterproductive at n=6** (destroys WAFR packing) and neutral otherwise.
+ABC is **counterproductive at n=6** (destroys LUT6_2 packing) and neutral otherwise.
 
 ### 5. Accuracy vs Paper
 
@@ -84,7 +84,7 @@ ABC is **counterproductive at n=6** (destroys WAFR packing) and neutral otherwis
 
 2. **16x scaling insight** — Random mapping needs 128k neurons to reach 57%; learnable needs 8k. Learnable mapping eliminates 16x redundant neurons.
 
-3. **WAFR packing mechanism** — Behavioral RTL (`LUT_CONTENTS[data_in]`) lets Vivado decompose neurons into LUT5 primitives and pack pairs sharing >=5 inputs into LUT6_2 cells. Structural RTL (explicit LUT6 primitives) prevents this. This accounts for the 1.54x area advantage.
+3. **LUT combining mechanism** — Behavioral RTL (`LUT_CONTENTS[data_in]`) lets Vivado decompose neurons into LUT5 primitives and pack pairs sharing >=5 inputs into LUT6_2 cells. Structural RTL (explicit LUT6 primitives) prevents this. This accounts for the 1.54x area advantage.
 
 4. **First-layer fan-in dominance** — The first DWN layer benefits most from high fan-in (processes raw thermometer bits). Later layers work on abstract features and need less fan-in. Optimal: high-low-moderate (e.g., 6-2-4).
 
@@ -109,7 +109,7 @@ See `run.sh` in repo root — covers training, RTL emission, verification, ABC, 
 ## Files Removed During Cleanup (2026-03-22)
 
 Experiment artifacts superseded by final results:
-- `structural_dwn_lut_*.sv` — WAFR experiment structural variants (buggy 8-bit INDEX_BITS, pre-fix)
+- `structural_dwn_lut_*.sv` — LUT combining experiment structural variants (buggy 8-bit INDEX_BITS, pre-fix)
 - `emit_dwn_flopoco_real.py`, `emit_dwn_vhdl_flopoco.py`, `emit_flopoco_thermo.py` — FloPoCo experiment scripts
 - `synth_dwn_throughput.tcl`, `synth_wafr_experiment.tcl`, `synth_dwn_vhdl.tcl` — experiment synthesis
 - `throughput_matching_task.md`, `wafr_packing_experiment.md`, `plan_paper_scope_synth.md`, `synthesis_tracker.md` — superseded research notes

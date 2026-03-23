@@ -6,7 +6,7 @@
 - Export trained LUT truth tables → BLIF format → ABC (`strash; dc2; map`)
 - Replace fixed LUT RTL with minimised netlist
 - Verify bit-exactness via existing cocotb equivalence test
-- **Status**: BLIF export implemented. ABC xcvu9p synthesis done (10 configs). Key finding: ABC is counterproductive for large networks (MNIST n=6: +264% LUTs due to lost WAFR packing).
+- **Status**: BLIF export implemented. ABC xcvu9p synthesis done (10 configs). Key finding: ABC is counterproductive for large networks (MNIST n=6: +264% LUTs due to lost LUT6_2 packing).
   - `src/mase_components/dwn_layers/blif.py` — `emit_network_blif(model, path)`
   - `scripts/emit_dwn_rtl.py --emit-blif` — emit RTL + BLIF together
 
