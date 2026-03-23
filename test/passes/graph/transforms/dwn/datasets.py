@@ -329,12 +329,15 @@ def _load_kws(args):
     if not os.path.exists(data_dir):
         print(f"Downloading Google Speech Commands v2 (~2.3GB) to {cache_dir}...")
         import urllib.request, tarfile
-        url = "http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"
+        url = "https://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"
         tar_path = os.path.join(cache_dir, "speech_commands_v0.02.tar.gz")
         os.makedirs(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"), exist_ok=True)
         urllib.request.urlretrieve(url, tar_path)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"))
+            try:
+                tar.extractall(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"), filter='data')
+            except TypeError:
+                tar.extractall(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"))
 
     # MLPerf Tiny KWS spec: 30ms window, 20ms stride, 10 MFCC, 40 mel bins
     SAMPLE_RATE = 16000
@@ -410,7 +413,7 @@ def _load_kws(args):
                 continue
             try:
                 feat = wav_to_features(wav_path)
-            except Exception:
+            except (RuntimeError, ValueError, OSError):
                 continue
             if rel_path in test_files:
                 X_test_list.append(feat)
@@ -433,7 +436,7 @@ def _load_kws(args):
                 continue
             try:
                 feat = wav_to_features(wav_path)
-            except Exception:
+            except (RuntimeError, ValueError, OSError):
                 continue
             if is_test:
                 X_test_list.append(feat)
@@ -571,7 +574,7 @@ def _load_toyadmos(args):
             try:
                 X_tr.append(extract_features(wav))
                 y_tr.append(0)
-            except Exception:
+            except (RuntimeError, ValueError, OSError):
                 pass
 
     # Test: files in ToyCar/test/ labeled by filename prefix
@@ -589,7 +592,7 @@ def _load_toyadmos(args):
         try:
             X_te.append(extract_features(wav))
             y_te.append(label)
-        except Exception:
+        except (RuntimeError, ValueError, OSError):
             pass
 
     X_train = torch.tensor(np.stack(X_tr), dtype=torch.float32)

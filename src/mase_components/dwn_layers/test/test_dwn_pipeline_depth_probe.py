@@ -23,7 +23,7 @@ import cocotb_test.simulator as simulator
 RTL_COMPONENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../rtl"))
 _DEFAULT_CKPT    = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../mase_output/dwn/mnist_n2.pt"))
 _DEFAULT_RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../mase_output/dwn/mnist_n2_rtl/hardware/rtl"))
-_DEFAULT_CACHE   = "/data/datasets/mnist/mnist_features.pt"
+_DEFAULT_CACHE   = os.path.expanduser("~/.cache/dwn/mnist/mnist_features.pt")
 
 
 def test_pipeline_depth_probe():
@@ -32,7 +32,7 @@ def test_pipeline_depth_probe():
     ckpt_path = os.environ.get("DWN_CKPT",    _DEFAULT_CKPT)
     rtl_dir   = os.environ.get("DWN_RTL_DIR", _DEFAULT_RTL_DIR)
 
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     cfg  = ckpt["model_config"]
     model_kwargs = {k: v for k, v in cfg.items() if k not in ("area_lambda", "lambda_reg")}
     model = DWNModel(**model_kwargs)
@@ -59,7 +59,7 @@ def test_pipeline_depth_probe():
         return [sum(lut_bits[g*gs:(g+1)*gs]) for g in range(nc)]
 
     # Take 10 MNIST samples (txn#0 is the one we verify)
-    cached = torch.load(_DEFAULT_CACHE, map_location="cpu")
+    cached = torch.load(_DEFAULT_CACHE, map_location="cpu", weights_only=True)
     transactions = []
     for i in range(10):
         img_flat = cached["X"][60000 + i].unsqueeze(0).float()

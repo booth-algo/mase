@@ -65,10 +65,8 @@ class DWNModel(nn.Module):
             lut_ns = [lut_n] * len(self.hidden_sizes)
         else:
             lut_ns = list(lut_n)
-            assert len(lut_ns) == len(self.hidden_sizes), (
-                f"lut_n list length ({len(lut_ns)}) must match number of layers "
-                f"({len(self.hidden_sizes)})"
-            )
+            if len(lut_ns) != len(self.hidden_sizes):
+                raise ValueError(f"lut_n list length ({len(lut_ns)}) must match number of layers ({len(self.hidden_sizes)})")
         self.lut_n = lut_ns  # store as list
 
         # Thermometer encoder
