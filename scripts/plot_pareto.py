@@ -19,9 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 
 
-# ---------------------------------------------------------------------------
 # Checkpoint helpers
-# ---------------------------------------------------------------------------
 
 def read_acc(path):
     """Return accuracy float from a checkpoint, or None if missing."""
@@ -50,9 +48,7 @@ def read_model_config(path):
         return None
 
 
-# ---------------------------------------------------------------------------
 # LUT-count estimators
-# ---------------------------------------------------------------------------
 
 def dwn_lut_count(hidden_sizes, lut_n_list):
     """
@@ -93,9 +89,7 @@ def parse_lut_n(cfg):
     return [int(x) for x in str(raw).split(",")]
 
 
-# ---------------------------------------------------------------------------
 # Known Vivado-measured counts (from project MEMORY.md)
-# ---------------------------------------------------------------------------
 
 VIVADO_MEASURED = {
     ("mnist", "dwn_n6"):   1256,
@@ -104,9 +98,7 @@ VIVADO_MEASURED = {
 }
 
 
-# ---------------------------------------------------------------------------
 # Build per-dataset point lists
-# ---------------------------------------------------------------------------
 
 DWN_DIR = "/home/khl22/mase-fork/mase_output/dwn"
 DL_DIR  = "/home/khl22/mase-fork/mase_output/difflogic"
@@ -206,9 +198,7 @@ def collect_points():
     return results
 
 
-# ---------------------------------------------------------------------------
 # Plotting
-# ---------------------------------------------------------------------------
 
 def plot(results, output_path):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -288,9 +278,7 @@ def plot(results, output_path):
     print(f"Saved plot to: {output_path}")
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Plot DWN vs DiffLogic Pareto frontier")

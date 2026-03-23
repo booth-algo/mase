@@ -15,9 +15,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-# ---------------------------------------------------------------------------
 # sys.path + conda env setup
-# ---------------------------------------------------------------------------
 
 _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
 if _SRC not in sys.path:
@@ -30,9 +28,7 @@ if os.path.isdir(_CONDA_ENV_BIN) and _CONDA_ENV_BIN not in os.environ.get("PATH"
 RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../rtl"))
 
 
-# ---------------------------------------------------------------------------
 # Tiny DWNHardwareCore (LUT-layers only, no thermometer / groupsum)
-# ---------------------------------------------------------------------------
 
 INPUT_SIZE = 16
 HIDDEN_SIZE = 8
@@ -51,9 +47,7 @@ class DWNHardwareCore(nn.Module):
         return x
 
 
-# ---------------------------------------------------------------------------
 # Pure-Python SW golden model (no CUDA / EFD required)
-# ---------------------------------------------------------------------------
 
 def sw_forward(x_bits, lut_layers):
     """
@@ -76,9 +70,7 @@ def sw_forward(x_bits, lut_layers):
     return x_bits
 
 
-# ---------------------------------------------------------------------------
 # Test
-# ---------------------------------------------------------------------------
 
 def test_rtl_dwn_top_equiv():
     """Emit tiny dwn_top RTL and verify against SW LUT golden model."""

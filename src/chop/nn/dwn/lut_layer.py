@@ -13,9 +13,9 @@ from .mapping import LearnableMapping, layer_mapping
 from .utils import STEFunction
 
 
-# ---------------------------------------------------------------------------
+#
 # JIT CUDA extension loader (MASE adaptation — replaces `import efd_cuda`)
-# ---------------------------------------------------------------------------
+#
 
 _efd_cuda_ext = None
 _efd_cuda_checked = False
@@ -36,9 +36,9 @@ def _get_efd_cuda():
     return _efd_cuda_ext
 
 
-# ---------------------------------------------------------------------------
+#
 # EFD autograd function (paper's exact formulation)
-# ---------------------------------------------------------------------------
+#
 
 class EFDFunction(torch.autograd.Function):
     """
@@ -77,13 +77,16 @@ class EFDFunction(torch.autograd.Function):
         if output_grad.is_cuda and ext is not None:
             input_grad, luts_grad = ext.backward(*ctx.saved_tensors, output_grad.contiguous())
         else:
-            raise NotImplementedError("EFDFunction: CPU not implemented. Move tensors to CUDA.")
+            raise NotImplementedError(
+                "EFDFunction.backward requires CUDA (forward has a CPU fallback, "
+                "but backward does not). Move tensors to CUDA for training."
+            )
         return input_grad, None, luts_grad, None, None
 
 
-# ---------------------------------------------------------------------------
+#
 # Spectral regularisation (MASE addition, not in torch_dwn)
-# ---------------------------------------------------------------------------
+#
 
 def spectral_reg_loss(layer: "LUTLayer", lambda_reg: float) -> torch.Tensor:
     """Spectral regularisation on LUT weights (Appendix of Bacellar et al.)."""
@@ -98,9 +101,9 @@ def spectral_reg_loss(layer: "LUTLayer", lambda_reg: float) -> torch.Tensor:
     return lambda_reg * (h ** 2).sum()
 
 
-# ---------------------------------------------------------------------------
+#
 # LUTLayer
-# ---------------------------------------------------------------------------
+#
 
 class LUTLayer(torch.nn.Module):
     """

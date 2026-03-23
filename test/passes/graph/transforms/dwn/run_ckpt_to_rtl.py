@@ -11,9 +11,9 @@ import os
 import types
 import argparse
 
-# ---------------------------------------------------------------------------
+#
 # sys.path setup — must come before any chop/mase_components imports
-# ---------------------------------------------------------------------------
+#
 
 _src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
 if _src not in sys.path:
@@ -59,9 +59,9 @@ import torch.nn as nn
 from chop.nn.dwn import DWNModel
 
 
-# ---------------------------------------------------------------------------
+#
 # DWNHardwareCore — LUT layers only (no thermometer, no group_sum)
-# ---------------------------------------------------------------------------
+#
 
 class DWNHardwareCore(nn.Module):
     """Thin wrapper around the LUT-layer stack for RTL emission."""
@@ -76,9 +76,9 @@ class DWNHardwareCore(nn.Module):
         return x
 
 
-# ---------------------------------------------------------------------------
+#
 # CLI
-# ---------------------------------------------------------------------------
+#
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -113,9 +113,9 @@ def parse_args():
     return parser.parse_args()
 
 
-# ---------------------------------------------------------------------------
+#
 # Main
-# ---------------------------------------------------------------------------
+#
 
 def main():
     args = parse_args()

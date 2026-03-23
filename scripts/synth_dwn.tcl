@@ -14,9 +14,9 @@
 # Paper comparison target (Bacellar et al. OOC Appendix D):
 #   part=xcvu9p-flgb2104-2-i  clk_period_ns=4.0  (250 MHz)
 
-# -----------------------------------------------------------------------
+
 # Parse arguments
-# -----------------------------------------------------------------------
+
 set rtl_dir       [lindex $argv 0]
 set results_dir   [lindex $argv 1]
 set part          [expr { [llength $argv] > 2 ? [lindex $argv 2] : "xcvc1902-viva1596-3HP-e-S" }]
@@ -34,9 +34,9 @@ puts "  Top module : $top_module"
 puts "  Clk period : $clk_period_ns ns"
 puts "================================================================"
 
-# -----------------------------------------------------------------------
+
 # Create in-memory project and read sources
-# -----------------------------------------------------------------------
+
 create_project -in_memory -part $part
 
 set sv_files [glob -nocomplain "$rtl_dir/*.sv"]
@@ -51,9 +51,9 @@ puts "Read [llength $sv_files] source file(s): [join $_fnames {, }]"
 
 set_property top $top_module [current_fileset]
 
-# -----------------------------------------------------------------------
+
 # Synthesise (out-of-context, performance-optimised — matches Jino et al.)
-# -----------------------------------------------------------------------
+
 synth_design \
     -top $top_module \
     -part $part \
@@ -67,16 +67,16 @@ if { [string match "*_clocked" $top_module] } {
     create_clock -period $clk_period_ns -name clk [get_ports clk]
 }
 
-# -----------------------------------------------------------------------
+
 # Assess maximum frequency (AMD guide: iterate implementation until timing met)
-# -----------------------------------------------------------------------
+
 opt_design
 place_design
 route_design
 
-# -----------------------------------------------------------------------
+
 # Reports
-# -----------------------------------------------------------------------
+
 report_utilization   -file "$results_dir/utilization.rpt"
 report_timing_summary -max_paths 10 -file "$results_dir/timing.rpt"
 report_power         -file "$results_dir/power.rpt"

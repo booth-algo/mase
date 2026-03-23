@@ -39,9 +39,7 @@ from cocotb.triggers import ClockCycles, RisingEdge
 PIPELINE_DEPTH = 4
 
 
-# ---------------------------------------------------------------------------
 # Transaction
-# ---------------------------------------------------------------------------
 
 @dataclass
 class Transaction:
@@ -53,9 +51,7 @@ class Transaction:
     sw_pred: int
 
 
-# ---------------------------------------------------------------------------
 # Sequencer
-# ---------------------------------------------------------------------------
 
 class Sequencer:
     """Loads transactions from config and feeds them to the Driver queue."""
@@ -82,9 +78,7 @@ class Sequencer:
         return len(self._transactions)
 
 
-# ---------------------------------------------------------------------------
 # Driver
-# ---------------------------------------------------------------------------
 
 class Driver:
     """Drives thermometer-encoded inputs into the clocked DUT."""
@@ -111,9 +105,7 @@ class Driver:
             await self._monitor_queue.put(txn)
 
 
-# ---------------------------------------------------------------------------
 # Monitor
-# ---------------------------------------------------------------------------
 
 @dataclass
 class ObservedOutput:
@@ -147,9 +139,7 @@ class Monitor:
             await self._scoreboard_queue.put(obs)
 
 
-# ---------------------------------------------------------------------------
 # Coverage Collector
-# ---------------------------------------------------------------------------
 
 class CoverageCollector:
     """Functional coverage: tracks which classes were tested and passed."""
@@ -177,9 +167,7 @@ class CoverageCollector:
         return all_covered
 
 
-# ---------------------------------------------------------------------------
 # Scoreboard
-# ---------------------------------------------------------------------------
 
 class Scoreboard:
     """Compares RTL scores vs SW golden model; tracks per-class stats."""
@@ -262,9 +250,7 @@ class Scoreboard:
         return self._fail == 0
 
 
-# ---------------------------------------------------------------------------
 # TestEnv  (top-level environment — wires all UVM components)
-# ---------------------------------------------------------------------------
 
 class TestEnv:
     """Top-level test environment: Sequencer → Driver → Monitor → Scoreboard."""
@@ -312,9 +298,7 @@ class TestEnv:
         return passed
 
 
-# ---------------------------------------------------------------------------
 # cocotb test entry point
-# ---------------------------------------------------------------------------
 
 def _load_config() -> dict:
     config_path = os.environ.get("DWN_PAPER_SCOPE_UVM_CONFIG", "")

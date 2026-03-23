@@ -31,9 +31,7 @@ import os
 import sys
 import types
 
-# ---------------------------------------------------------------------------
 # sys.path + sys.modules stub (avoids torchvision chain import error)
-# ---------------------------------------------------------------------------
 
 _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../src"))
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
@@ -79,9 +77,7 @@ _DEFAULT_MNIST_CACHE = "/data/datasets/mnist/mnist_features.pt"
 NUM_TEST_SAMPLES = int(os.environ.get("DWN_PAPER_SCOPE_NUM_SAMPLES", "200"))
 
 
-# ---------------------------------------------------------------------------
 # Pure-Python SW forward (matches RTL LUT layers exactly — no CUDA/EFD required)
-# ---------------------------------------------------------------------------
 
 def sw_forward(x_bits, lut_layers):
     """
@@ -105,9 +101,7 @@ def sw_forward(x_bits, lut_layers):
     return x_bits
 
 
-# ---------------------------------------------------------------------------
 # Pure-Python GroupSum forward (matches fixed_dwn_groupsum_pipelined RTL exactly)
-# ---------------------------------------------------------------------------
 
 def group_sum_forward(lut_bits, num_classes):
     """
@@ -128,9 +122,7 @@ def group_sum_forward(lut_bits, num_classes):
     ]
 
 
-# ---------------------------------------------------------------------------
 # Golden reference builder
-# ---------------------------------------------------------------------------
 
 def build_golden_reference(ckpt_path: str):
     """
@@ -195,9 +187,7 @@ def build_golden_reference(ckpt_path: str):
     return model, hw_forward_paper_scope, cfg
 
 
-# ---------------------------------------------------------------------------
 # MNIST data loader (from pre-cached .pt file, no torchvision required)
-# ---------------------------------------------------------------------------
 
 def load_mnist_test(num_samples: int):
     """
@@ -227,9 +217,7 @@ def load_mnist_test(num_samples: int):
     return samples
 
 
-# ---------------------------------------------------------------------------
 # Pytest test
-# ---------------------------------------------------------------------------
 
 def test_dwn_paper_scope_fullsim():
     """

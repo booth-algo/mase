@@ -51,9 +51,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from chop.nn.dwn import DWNModel
 
 
-# ---------------------------------------------------------------------------
 # Inline copy of compute_area_loss (duplicated to avoid sibling-module import)
-# ---------------------------------------------------------------------------
 
 def compute_area_loss(model):
     """
@@ -97,9 +95,7 @@ def compute_area_loss(model):
     return entropy_loss, area_luts
 
 
-# ---------------------------------------------------------------------------
 # Data helpers
-# ---------------------------------------------------------------------------
 
 TABULAR_DATASETS = [
     "phoneme", "skin-seg", "higgs", "australian", "nomao",
@@ -177,9 +173,7 @@ def load_data(dataset, seed):
         return _fake_data()
 
 
-# ---------------------------------------------------------------------------
 # Training for a single lambda
-# ---------------------------------------------------------------------------
 
 def train_one(
     area_lambda, lut_n, X_train, y_train, X_test, y_test,
@@ -253,9 +247,7 @@ def train_one(
     return area_luts_final, best_acc
 
 
-# ---------------------------------------------------------------------------
 # Pareto computation
-# ---------------------------------------------------------------------------
 
 def compute_pareto_front(results):
     """
@@ -280,9 +272,7 @@ def compute_pareto_front(results):
     return pareto
 
 
-# ---------------------------------------------------------------------------
 # ASCII scatter plot
-# ---------------------------------------------------------------------------
 
 def ascii_scatter(results, pareto_flags, width=60, height=12):
     """Print a simple ASCII scatter plot: area_luts on x-axis, accuracy on y-axis."""
@@ -330,9 +320,7 @@ def ascii_scatter(results, pareto_flags, width=60, height=12):
     print()
 
 
-# ---------------------------------------------------------------------------
 # Results table
-# ---------------------------------------------------------------------------
 
 def print_table(results, pareto_flags):
     print("=== Pareto Sweep Results ===")
@@ -347,9 +335,7 @@ def print_table(results, pareto_flags):
     print(f"\nPareto front: {n_pareto} config{'s' if n_pareto != 1 else ''}")
 
 
-# ---------------------------------------------------------------------------
 # CSV output
-# ---------------------------------------------------------------------------
 
 def _output_dir():
     return os.path.abspath(
@@ -380,9 +366,7 @@ def save_csv(results, pareto_flags, lut_n_str):
     return csv_path
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -430,9 +414,7 @@ def _parse_lut_n(lut_n_str):
     return parts[0] if len(parts) == 1 else parts
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     args = parse_args()

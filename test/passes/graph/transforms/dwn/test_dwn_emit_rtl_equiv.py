@@ -27,9 +27,7 @@ OUTPUT_SIZE = 4
 LUT_N = 2
 
 
-# ---------------------------------------------------------------------------
 # Cocotb testbench source (written to tempdir at test-time)
-# ---------------------------------------------------------------------------
 
 _TB_SOURCE = '''\
 """Cocotb testbench for dwn_top equivalence check.
@@ -89,9 +87,7 @@ async def test_equiv(dut):
 '''
 
 
-# ---------------------------------------------------------------------------
 # Test
-# ---------------------------------------------------------------------------
 
 @requires_cuda
 def test_emitted_top_functional_equiv():

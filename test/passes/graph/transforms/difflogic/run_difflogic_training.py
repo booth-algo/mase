@@ -6,7 +6,6 @@ DiffLogic uses 2-input differentiable logic gates (16 Boolean operations)
 instead of LUTs.  No thermometer encoding — raw pixel values are used
 (the relaxed gates operate on continuous [0,1] during training).
 
-[Example usage]
 MNIST (20x20 border-removed, matching the DiffLogic paper):
     python run_difflogic_training.py --dataset mnist --epochs 30 \
         --num-neurons 8000 --num-layers 6 --grad-factor 1 --tau 20 \
@@ -16,18 +15,13 @@ CIFAR-10 (32x32x3 = 3072 raw features):
     python run_difflogic_training.py --dataset cifar10 --epochs 50 \
         --num-neurons 8000 --num-layers 6 --grad-factor 2 --tau 20 \
         --lr 0.01 --batch-size 128 --ckpt-name cifar10_8k
-
-Requires the `difflogic` package:
-    pip install difflogic   (needs CUDA toolkit for fast kernels)
 """
 import sys
 import os
 import types
 import argparse
 
-# ---------------------------------------------------------------------------
 # sys.path / sys.modules stubs — avoid pulling in the heavy mase __init__.py
-# ---------------------------------------------------------------------------
 _src = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../src'))
 sys.path.insert(0, _src)
 
@@ -51,9 +45,6 @@ except ImportError:
     sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 def parse_args():
     parser = argparse.ArgumentParser(
         description="DiffLogic training runner (Pareto comparison with DWN)",
@@ -99,9 +90,6 @@ def parse_args():
     return parser.parse_args()
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
 def load_data(args):
     """Load dataset.  Returns (X_train, y_train, X_test, y_test, input_features, num_classes)."""
     if args.dataset == "mnist":
@@ -117,12 +105,7 @@ def load_data(args):
 
 
 def _load_mnist(args):
-    """Load MNIST via OpenML (avoids torchvision dependency).
-
-    Uses sklearn fetch_openml for mnist_784, then applies the same border-removal
-    crop (28x28 → 20x20 = 400 features) as the DiffLogic paper if --remove-border.
-    Results cached to /data/datasets/mnist/ or ~/.cache/mnist/.
-    """
+    """Load MNIST via OpenML, optionally cropping the border as in the DiffLogic paper."""
     import os
     import numpy as np
     try:
@@ -145,7 +128,6 @@ def _load_mnist(args):
     X = dataset.data.astype(np.float32) / 255.0   # [70000, 784]
     y = dataset.target.astype(np.int64)
 
-    # Standard MNIST split: first 60k train, last 10k test
     X_train_np, y_train_np = X[:60000], y[:60000]
     X_test_np,  y_test_np  = X[60000:], y[60000:]
 
@@ -195,13 +177,7 @@ def _load_cifar10(args):
 
 
 def _load_jsc(args):
-    """Load hls4ml jet substructure classification (JSC) dataset from OpenML.
-
-    Fetches 'hls4ml_lhc_jets_hlf' (version 1) via scikit-learn's fetch_openml.
-    Features are already continuous; MinMaxScaler maps them to [0, 1] as
-    required by DiffLogic's continuous-relaxation gates.
-    Splits 80/20 stratified.  Typical shape: ~830k samples, 16 features, 5 classes.
-    """
+    """Load hls4ml jet substructure classification (JSC) dataset from OpenML (80/20 split)."""
     try:
         from sklearn.datasets import fetch_openml
         from sklearn.model_selection import train_test_split
@@ -223,7 +199,6 @@ def _load_jsc(args):
         X, y, test_size=0.2, random_state=args.seed, stratify=y
     )
 
-    # Normalize to [0, 1] — required for DiffLogic continuous gates
     scaler = MinMaxScaler()
     X_train_np = scaler.fit_transform(X_train_np).astype(np.float32)
     X_test_np  = scaler.transform(X_test_np).astype(np.float32)
@@ -240,14 +215,7 @@ def _load_jsc(args):
 
 
 def _load_nid(args):
-    """Load NSL-KDD Network Intrusion Detection dataset.
-
-    Downloads KDDTrain+.txt and KDDTest+.txt from GitHub if not cached.
-    Categorical columns (protocol_type, service, flag) are one-hot encoded.
-    Labels are mapped to 5 coarse classes: normal, dos, probe, r2l, u2r.
-    All features are MinMax-scaled to [0, 1] for DiffLogic.
-    Typical shape after encoding: ~125k train / ~22k test, ~122 features, 5 classes.
-    """
+    """Load NSL-KDD Network Intrusion Detection dataset, downloading if not cached."""
     import numpy as np
     import os
     import urllib.request
@@ -293,7 +261,6 @@ def _load_nid(args):
     df_train = df_train.drop("difficulty", axis=1)
     df_test  = df_test.drop("difficulty", axis=1)
 
-    # One-hot encode categorical columns jointly so both splits share the same schema
     cat_cols = ["protocol_type", "service", "flag"]
     df_all  = pd.concat([df_train, df_test], axis=0)
     df_all  = pd.get_dummies(df_all, columns=cat_cols)
@@ -326,7 +293,6 @@ def _load_nid(args):
     y_train_np = le.transform(y_train_raw).astype(np.int64)
     y_test_np  = le.transform(y_test_raw).astype(np.int64)
 
-    # Normalize to [0, 1] — required for DiffLogic continuous gates
     scaler = MinMaxScaler()
     X_train_np = scaler.fit_transform(X_train_np).astype(np.float32)
     X_test_np  = scaler.transform(X_test_np).astype(np.float32)
@@ -343,9 +309,6 @@ def _load_nid(args):
     return X_train, y_train, X_test, y_test, input_features, num_classes
 
 
-# ---------------------------------------------------------------------------
-# Model construction
-# ---------------------------------------------------------------------------
 def build_model(input_features, num_classes, args, device):
     """Build a DiffLogic model: Flatten + N x LogicLayer + GroupSum."""
     impl = args.implementation
@@ -365,14 +328,12 @@ def build_model(input_features, num_classes, args, device):
 
     layers = [nn.Flatten()]
 
-    # First LogicLayer: input_features -> num_neurons
     layers.append(LogicLayer(
         input_features, num_neurons,
         device=dev_str, grad_factor=args.grad_factor,
         implementation=impl, connections=args.connections,
     ))
 
-    # Hidden LogicLayers: num_neurons -> num_neurons
     for _ in range(args.num_layers - 1):
         layers.append(LogicLayer(
             num_neurons, num_neurons,
@@ -380,16 +341,12 @@ def build_model(input_features, num_classes, args, device):
             implementation=impl, connections=args.connections,
         ))
 
-    # GroupSum output
     layers.append(GroupSum(k=num_classes, tau=args.tau, device=dev_str))
 
     model = nn.Sequential(*layers)
     return model
 
 
-# ---------------------------------------------------------------------------
-# Checkpoint helpers
-# ---------------------------------------------------------------------------
 def _ckpt_dir():
     return os.path.join(os.path.dirname(__file__), "../../../../../mase_output/difflogic")
 
@@ -410,9 +367,6 @@ def _model_config(args, input_features, num_classes):
     }
 
 
-# ---------------------------------------------------------------------------
-# Eval mode
-# ---------------------------------------------------------------------------
 def eval_checkpoint(args, device):
     ckpt_path = args.ckpt or os.path.join(_ckpt_dir(), f"{args.ckpt_name}.pt")
     if not os.path.exists(ckpt_path):
@@ -420,7 +374,7 @@ def eval_checkpoint(args, device):
         return 1
 
     print(f"Loading checkpoint: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=True)
 
     cfg = ckpt.get("model_config")
     if cfg is None:
@@ -430,7 +384,6 @@ def eval_checkpoint(args, device):
         print(f"  Config: num_neurons={cfg['num_neurons']}, num_layers={cfg['num_layers']}, "
               f"tau={cfg['tau']}, connections={cfg['connections']}")
 
-    # Temporarily override args from config
     for key in ["num_neurons", "num_layers", "grad_factor", "tau", "connections", "implementation"]:
         if key in cfg:
             setattr(args, key.replace("-", "_"), cfg[key])
@@ -455,9 +408,6 @@ def eval_checkpoint(args, device):
     return 0
 
 
-# ---------------------------------------------------------------------------
-# Training
-# ---------------------------------------------------------------------------
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)

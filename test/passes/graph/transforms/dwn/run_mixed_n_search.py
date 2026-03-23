@@ -38,9 +38,7 @@ from chop.nn.dwn import DWNModel
 from utils import compute_area_loss
 
 
-# ---------------------------------------------------------------------------
 # Data helpers
-# ---------------------------------------------------------------------------
 
 def _fake_data(n_train=640):
     print(f"Using fake random data ({n_train} train, 200 test, features=784, classes=10)")
@@ -144,9 +142,7 @@ def load_data(args):
         )
 
 
-# ---------------------------------------------------------------------------
 # Pareto helpers
-# ---------------------------------------------------------------------------
 
 def compute_pareto_front(results):
     """
@@ -180,9 +176,7 @@ def compute_pareto_front(results):
     return pareto
 
 
-# ---------------------------------------------------------------------------
 # Training a single config
-# ---------------------------------------------------------------------------
 
 def train_config(lut_n_list, input_features, num_classes, args,
                  X_train, y_train, X_test, y_test, device):
@@ -249,9 +243,7 @@ def train_config(lut_n_list, input_features, num_classes, args,
     return best_acc, area_luts
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -288,9 +280,7 @@ def parse_args():
     return parser.parse_args()
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 def main():
     args = parse_args()

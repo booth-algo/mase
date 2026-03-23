@@ -4,40 +4,13 @@ BLIF export for DWN LUT layers.
 Enables post-training Boolean minimisation via ABC.
 
 Usage:
-    from mase_components.dwn_layers.blif import emit_layer_blif, emit_network_blif
+    from mase_components.dwn_layers.blif import emit_network_blif
     emit_network_blif(model, "network.blif")
 """
 from pathlib import Path
 
 import torch
 
-
-def emit_layer_blif(layer, layer_idx: int, layer_input_offset: int, f) -> None:
-    """
-    Write .names blocks for all neurons in one LUT layer.
-
-    Args:
-        layer:              LUTLayer instance (eval mode, on any device).
-        layer_idx:          Index of this layer (used to name output wires l{L}_out_{i}).
-        layer_input_offset: Not used for wire naming — wire names are resolved by
-                            get_input_indices(), which already holds global indices
-                            relative to the layer's own input vector.  The caller
-                            passes the appropriate input wire name list.
-        f:                  Open file object to write into.
-    """
-    raise NotImplementedError("Use emit_layer_blif_with_names instead")
-
-
-def _input_wire_names_for_layer(layer_idx: int, layer, prev_wire_names: list) -> list:
-    """
-    Return the list of wire name strings that index into the input of this layer.
-
-    For layer 0 the inputs come from the thermometer encoder: x_0 … x_{N-1}.
-    For layer L > 0 the inputs are the outputs of layer L-1: l{L-1}_out_0 … l{L-1}_out_{M-1}.
-
-    prev_wire_names is the full list of wires available at this layer's input.
-    """
-    return prev_wire_names
 
 
 def emit_network_blif(model, output_path) -> None:
