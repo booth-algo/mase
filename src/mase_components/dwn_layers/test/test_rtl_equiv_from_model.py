@@ -13,9 +13,7 @@ import cocotb_test.simulator as simulator
 import pytest
 import torch
 
-# ---------------------------------------------------------------------------
 # sys.path setup — mirrors test_rtl_sim.py so chop packages are importable
-# ---------------------------------------------------------------------------
 
 _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
 if _SRC not in sys.path:
@@ -26,9 +24,7 @@ _CONDA_ENV_BIN = os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")
 if os.path.isdir(_CONDA_ENV_BIN) and _CONDA_ENV_BIN not in os.environ.get("PATH", ""):
     os.environ["PATH"] = _CONDA_ENV_BIN + os.pathsep + os.environ.get("PATH", "")
 
-# ---------------------------------------------------------------------------
 # RTL sources — same as test_rtl_sim.py
-# ---------------------------------------------------------------------------
 
 RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../rtl"))
 VERILOG_SOURCES = [
@@ -42,9 +38,7 @@ VERILOG_SOURCES = [
 ]
 
 
-# ---------------------------------------------------------------------------
 # Parameter packing helper
-# ---------------------------------------------------------------------------
 
 def _pack_lut_params(lut_layer):
     indices = lut_layer.get_input_indices()  # (output_size, n)
@@ -65,9 +59,7 @@ def _pack_lut_params(lut_layer):
     return packed_indices, packed_contents
 
 
-# ---------------------------------------------------------------------------
 # Test
-# ---------------------------------------------------------------------------
 
 def test_rtl_lut_layer_from_trained_model():
     """RTL/SW equivalence using LUTLayer weights initialised with torch.manual_seed(42).

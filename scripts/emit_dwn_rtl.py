@@ -21,7 +21,7 @@ import types
 _src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
 sys.path.insert(0, _src)
 
-# ---------------------------------------------------------------------------
+#
 # Import-chain workaround
 #
 # The dependency chain  chop → chop.nn.quantized → transformers → torchvision
@@ -29,7 +29,7 @@ sys.path.insert(0, _src)
 # (torchvision::nms kernel not registered).  RTL emission needs neither
 # torchvision nor HuggingFace transformers, so we intercept ALL imports of
 # these packages via a sys.meta_path finder and return harmless stub modules.
-# ---------------------------------------------------------------------------
+#
 
 class _StubModule(types.ModuleType):
     """Stub module: silently absorbs attribute access and sub-module imports."""
@@ -106,7 +106,7 @@ _tf_utils_fx = _StubFinder().load_module("transformers.utils.fx")
 _tf_utils_fx.HFTracer = _HFTracer
 _tf_utils_fx.symbolic_trace = _hf_symbolic_trace
 
-# ---------------------------------------------------------------------------
+#
 
 import torch
 import torch.nn as nn

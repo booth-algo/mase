@@ -32,9 +32,7 @@ import os
 import sys
 import types
 
-# ---------------------------------------------------------------------------
 # sys.path + sys.modules stub (avoids torchvision chain import error)
-# ---------------------------------------------------------------------------
 
 _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../src"))
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
@@ -78,9 +76,7 @@ _DEFAULT_MNIST_CACHE = "/data/datasets/mnist/mnist_features.pt"
 NUM_TEST_SAMPLES = int(os.environ.get("DWN_UVM_NUM_SAMPLES", "500"))
 
 
-# ---------------------------------------------------------------------------
 # Pure-Python SW forward (matches RTL exactly — no CUDA/EFD required)
-# ---------------------------------------------------------------------------
 
 def sw_forward(x_bits, lut_layers):
     """
@@ -104,9 +100,7 @@ def sw_forward(x_bits, lut_layers):
     return x_bits
 
 
-# ---------------------------------------------------------------------------
 # Golden reference builder
-# ---------------------------------------------------------------------------
 
 def build_golden_reference(ckpt_path: str):
     """
@@ -169,9 +163,7 @@ def build_golden_reference(ckpt_path: str):
     return model, hw_forward, cfg
 
 
-# ---------------------------------------------------------------------------
 # MNIST data loader (from pre-cached .pt file, no torchvision required)
-# ---------------------------------------------------------------------------
 
 def load_mnist_test(num_samples: int):
     """
@@ -201,9 +193,7 @@ def load_mnist_test(num_samples: int):
     return samples
 
 
-# ---------------------------------------------------------------------------
 # Pytest test
-# ---------------------------------------------------------------------------
 
 def test_dwn_mnist_fullsim():
     """

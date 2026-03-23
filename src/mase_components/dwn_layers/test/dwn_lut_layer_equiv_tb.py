@@ -24,9 +24,7 @@ from cocotb.triggers import ClockCycles, RisingEdge
 from fixed_dwn_lut_layer_tb import LUTLayerConfig, LUTLayerSWModel, LUTLayerTx, Scoreboard
 
 
-# ---------------------------------------------------------------------------
 # Load config from environment variable
-# ---------------------------------------------------------------------------
 
 def _load_config() -> LUTLayerConfig:
     config_path = os.environ.get("DWN_EQUIV_CONFIG", "")
@@ -43,9 +41,7 @@ def _load_config() -> LUTLayerConfig:
     )
 
 
-# ---------------------------------------------------------------------------
 # Infrastructure (mirrors fixed_dwn_lut_layer_tb.py)
-# ---------------------------------------------------------------------------
 
 async def clock_reset(dut: HierarchyObject) -> None:
     await cocotb.start(Clock(dut.clk, 3.2, units="ns").start())
@@ -72,9 +68,7 @@ async def monitor(dut: HierarchyObject) -> int:
     return int(dut.data_out_0.value)
 
 
-# ---------------------------------------------------------------------------
 # Test
-# ---------------------------------------------------------------------------
 
 @cocotb.test()
 async def test_lut_layer_equiv(dut: HierarchyObject) -> None:

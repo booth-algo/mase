@@ -334,10 +334,11 @@ def _load_kws(args):
         os.makedirs(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"), exist_ok=True)
         urllib.request.urlretrieve(url, tar_path)
         with tarfile.open(tar_path) as tar:
-            try:
-                tar.extractall(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"), filter='data')
-            except TypeError:
-                tar.extractall(os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02"))
+            dest = os.path.join(cache_dir, "SpeechCommands", "speech_commands_v0.02")
+            for member in tar.getmembers():
+                if os.path.isabs(member.name) or ".." in member.name:
+                    raise RuntimeError(f"Refusing to extract path-traversal entry: {member.name}")
+            tar.extractall(dest)
 
     # MLPerf Tiny KWS spec: 30ms window, 20ms stride, 10 MFCC, 40 mel bins
     SAMPLE_RATE = 16000
@@ -392,6 +393,7 @@ def _load_kws(args):
 
     X_train_list, y_train_list = [], []
     X_test_list,  y_test_list  = [], []
+    skipped = 0
 
     all_keywords = KEYWORDS + ["_silence_"]
     other_dirs = [d for d in sorted(os.listdir(data_dir))
@@ -413,7 +415,8 @@ def _load_kws(args):
                 continue
             try:
                 feat = wav_to_features(wav_path)
-            except (RuntimeError, ValueError, OSError):
+            except (RuntimeError, ValueError, OSError) as e:
+                skipped += 1
                 continue
             if rel_path in test_files:
                 X_test_list.append(feat)
@@ -431,12 +434,12 @@ def _load_kws(args):
             if rel_path in val_files:
                 continue
             is_test = rel_path in test_files
-            # For train: skip if already at cap
             if not is_test and unknown_train_count >= 2000:
                 continue
             try:
                 feat = wav_to_features(wav_path)
             except (RuntimeError, ValueError, OSError):
+                skipped += 1
                 continue
             if is_test:
                 X_test_list.append(feat)
@@ -460,6 +463,8 @@ def _load_kws(args):
     torch.save({"X_train": X_train, "y_train": y_train,
                 "X_test": X_test, "y_test": y_test}, features_cache)
 
+    if skipped:
+        print(f"  Warning: skipped {skipped} unreadable WAV files")
     num_features = X_train.shape[1]  # 490
     print(f"kws: {len(X_train)} train, {len(X_test)} test, "
           f"features={num_features}, classes=12")
@@ -510,6 +515,9 @@ def _load_toyadmos(args):
             print("  Download complete.")
         print("  Extracting...")
         with zipfile.ZipFile(dev_zip_path, "r") as zf:
+            for name in zf.namelist():
+                if os.path.isabs(name) or ".." in name:
+                    raise RuntimeError(f"Refusing to extract path-traversal entry: {name}")
             zf.extractall(cache_dir)
 
     features_cache = os.path.join(cache_dir, "toyadmos_features.pt")
@@ -563,6 +571,7 @@ def _load_toyadmos(args):
         return patch.transpose(0, 1).reshape(-1).numpy()  # (640,)
 
     print("Loading ToyADMOS/car dataset (DCASE 2020 Task 2)...")
+    skipped_wav = 0
 
     # Train: all files in ToyCar/train/ are normal (label=0)
     print("  Processing train split (ToyCar/train/, all normal)...")
@@ -575,7 +584,7 @@ def _load_toyadmos(args):
                 X_tr.append(extract_features(wav))
                 y_tr.append(0)
             except (RuntimeError, ValueError, OSError):
-                pass
+                skipped_wav += 1
 
     # Test: files in ToyCar/test/ labeled by filename prefix
     print("  Processing test split (ToyCar/test/, normal + anomaly)...")
@@ -593,8 +602,10 @@ def _load_toyadmos(args):
             X_te.append(extract_features(wav))
             y_te.append(label)
         except (RuntimeError, ValueError, OSError):
-            pass
+            skipped_wav += 1
 
+    if skipped_wav:
+        print(f"  Warning: skipped {skipped_wav} unreadable WAV files")
     X_train = torch.tensor(np.stack(X_tr), dtype=torch.float32)
     y_train = torch.tensor(y_tr, dtype=torch.long)
     X_test  = torch.tensor(np.stack(X_te), dtype=torch.float32)
