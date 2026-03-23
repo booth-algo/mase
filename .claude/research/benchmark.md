@@ -204,7 +204,7 @@ ABC command: `strash; dc2` (equivalence-preserving — bit-exact post-minimisati
 |--------|------|-----|------|-----------|----------|-----------|
 | MNIST n=6 lg [2000,1000] z=3 | **2,655** | **1,752** | **791 MHz** | 4,082 | 3,385 | 827 MHz |
 
-**Gap**: LUTs 35% fewer (WAFR packing), Fmax 95.6% of paper (4.4% gap — 2-stage vs paper's 3-stage GroupSum pipeline depth).
+**Gap**: LUTs 35% fewer (LUT combining (Vivado's optimization that packs pairs of LUT5 functions into LUT6_2 dual-output cells)), Fmax 95.6% of paper (4.4% gap — 2-stage vs paper's 3-stage GroupSum pipeline depth).
 **Previous best** (full_pipeline_top_clocked): 4,769 LUTs / 301 MHz → this is a 1.79× LUT reduction AND 2.63× Fmax improvement.
 
 ---

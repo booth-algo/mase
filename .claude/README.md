@@ -9,10 +9,8 @@ Tracks research progress, results, and findings for the DWN FPGA project (Bacell
 ├── README.md                    ← this file
 ├── research/
 │   ├── benchmark.md             ← accuracy vs paper + Vivado LUT counts (primary results)
-│   ├── novel_findings.md        ← novel contributions: mixed-N, Pareto, ABC, WAFR
-│   ├── future_tasks.md          ← outstanding tasks and ideas
-│   ├── session_2026_03_14.md    ← INDEX_BITS fix + paper-scope synthesis
-│   └── session_2026_03_15.md    ← final paper numbers (all xcvu9p)
+│   ├── novel_findings.md        ← novel contributions: mixed-N, Pareto, ABC, LUT combining
+│   └── future_tasks.md          ← outstanding tasks and ideas
 ├── results/
 │   ├── vivado/
 │   │   ├── fixed_rtl/           ← post-INDEX_BITS-fix xcvu9p results (15 configs)
@@ -28,7 +26,7 @@ Tracks research progress, results, and findings for the DWN FPGA project (Bacell
 
 | Result | Value |
 |--------|-------|
-| **WAFR packing** | 2,655 LUTs vs paper 4,082 — **1.54x fewer** (MNIST n=6, paper-scope) |
+| **LUT combining (LUT6_2 packing)** | 2,655 LUTs vs paper 4,082 — **1.54x fewer** (MNIST n=6, paper-scope) |
 | **Fmax** | 791 MHz vs paper 827 MHz — **95.6% of paper** |
 | **DWN vs DiffLogic (JSC)** | +11.7pp accuracy at 1.8x fewer LUTs |
 | **Mixed fan-in** | 6-2-4 beats 6-6-6: 2.3x fewer LUTs, +2.16pp accuracy (CIFAR-10) |
