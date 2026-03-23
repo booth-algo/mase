@@ -3,19 +3,12 @@ Pytest runner for the pipeline-depth probe.
 Drives ONE MNIST transaction into dwn_paper_scope_sim_wrapper,
 reads output at delays 1-8 cycles to locate the correct pipeline depth.
 """
-import json, os, sys, types
+import json, os, sys
 
-_SRC  = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../src"))
-_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-for p in [_SRC, _REPO]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
-for _pkg in ["chop", "chop.nn"]:
-    if _pkg not in sys.modules:
-        _mod = types.ModuleType(_pkg)
-        _mod.__path__ = [os.path.join(_SRC, *_pkg.split("."))]
-        _mod.__package__ = _pkg
-        sys.modules[_pkg] = _mod
+from dwn_test_utils import setup_sys_path, setup_conda_path, sw_forward, group_sum_forward
+
+setup_sys_path()
+setup_conda_path()
 
 import torch
 import cocotb_test.simulator as simulator
@@ -43,21 +36,6 @@ def test_pipeline_depth_probe():
     lut_layers  = list(model.lut_layers)
     num_classes = cfg["num_classes"]
 
-    def sw_forward(x_bits, layers):
-        for layer in layers:
-            indices  = layer.get_input_indices().tolist()
-            contents = layer.get_lut_contents().tolist()
-            out = []
-            for i in range(layer.output_size):
-                addr = sum(x_bits[indices[i][k]] << k for k in range(layer.n))
-                out.append(int(contents[i][addr]))
-            x_bits = out
-        return x_bits
-
-    def group_sum(lut_bits, nc):
-        gs = len(lut_bits) // nc
-        return [sum(lut_bits[g*gs:(g+1)*gs]) for g in range(nc)]
-
     # Take 10 MNIST samples (txn#0 is the one we verify)
     cached = torch.load(_DEFAULT_CACHE, map_location="cpu", weights_only=True)
     transactions = []
@@ -69,7 +47,7 @@ def test_pipeline_depth_probe():
             thermo_bits = thermo[0].int().tolist()
         thermo_packed   = sum(b << bi for bi, b in enumerate(thermo_bits))
         lut_bits        = sw_forward(thermo_bits, lut_layers)
-        expected_scores = group_sum(lut_bits, num_classes)
+        expected_scores = group_sum_forward(lut_bits, num_classes)
         transactions.append({
             "thermo_packed":   thermo_packed,
             "expected_scores": expected_scores,
