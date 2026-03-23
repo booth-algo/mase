@@ -51,48 +51,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from chop.nn.dwn import DWNModel
 
 
-# Inline copy of compute_area_loss (duplicated to avoid sibling-module import)
-
-def compute_area_loss(model):
-    """
-    Hardware-aware regularization for DWN.
-
-    Two components:
-    1. Mapping entropy loss (differentiable): for LUT layers with LearnableMapping,
-       penalize high entropy of mapping attention weights. High entropy means each
-       LUT input attends to many source features (high routing complexity).
-       Low entropy = concentrated connections = fewer effective routing resources.
-
-    2. Area metric (non-differentiable, logged only): sum_l(output_size_l * 2^n_l)
-       = total LUT table storage across all layers. Logged as 'area_luts' for
-       Pareto analysis between area and accuracy.
-
-    Returns:
-        (entropy_loss: Tensor, area_luts: int)
-    """
-    from chop.nn.dwn.mapping import LearnableMapping
-
-    entropy_loss = torch.tensor(0.0, device=next(model.parameters()).device)
-    area_luts = 0
-
-    for layer in model.lut_layers:
-        # Area metric (logged, not gradient-flowed)
-        area_luts += layer.output_size * (2 ** layer.n)
-
-        # Mapping entropy regularization (differentiable)
-        if isinstance(layer.mapping, LearnableMapping):
-            # weights: (input_size, output_size * n)
-            # Each column is a distribution over input_size source features
-            W = layer.mapping.weights   # (input_size, output_size * n)
-            # Temperature: use the layer's mapping tau (softmax temperature)
-            tau = getattr(layer.mapping, 'tau', 0.001)
-            probs = torch.softmax(W / tau, dim=0)   # (input_size, output_size*n)
-            # Shannon entropy per mapping position, averaged
-            log_probs = torch.log(probs + 1e-10)
-            entropy = -(probs * log_probs).sum(dim=0).mean()  # scalar
-            entropy_loss = entropy_loss + entropy
-
-    return entropy_loss, area_luts
+from utils import compute_area_loss
 
 
 # Data helpers

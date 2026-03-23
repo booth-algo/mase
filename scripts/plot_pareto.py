@@ -100,8 +100,8 @@ VIVADO_MEASURED = {
 
 # Build per-dataset point lists
 
-DWN_DIR = "/home/khl22/mase-fork/mase_output/dwn"
-DL_DIR  = "/home/khl22/mase-fork/mase_output/difflogic"
+DWN_DIR = os.path.join(os.path.dirname(__file__), "..", "mase_output", "dwn")
+DL_DIR  = os.path.join(os.path.dirname(__file__), "..", "mase_output", "difflogic")
 
 
 def collect_points():

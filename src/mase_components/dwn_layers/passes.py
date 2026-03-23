@@ -64,12 +64,14 @@ def _pack_dwn_lut_params(lut_layer):
     return input_size, output_size, lut_n, index_bits, indices_hex, contents_hex
 
 
-def dwn_hardware_metadata_pass(graph, args={}):
+def dwn_hardware_metadata_pass(graph, args=None):
     """
     Add hardware metadata to DWN LUTLayer nodes for Verilog emit.
     Modelled after difflogic_hardware_metadata_optimize_pass.
     """
     def _is_dwn_lut_node(node):
+        if node.op != "call_module":
+            return False
         return node.meta["mase"]["common"]["mase_op"] == "user_defined_module"
 
     for node in graph.nodes:
@@ -113,7 +115,7 @@ def dwn_hardware_metadata_pass(graph, args={}):
     return (graph, None)
 
 
-def dwn_hardware_force_fixed_flatten_pass(graph, args={}):
+def dwn_hardware_force_fixed_flatten_pass(graph, args=None):
     """
     Force the flatten node (float->binary boundary) to use fixed_dwn_flatten RTL.
     Mirrors difflogic_hardware_force_fixed_flatten_pass.
@@ -132,7 +134,7 @@ def dwn_hardware_force_fixed_flatten_pass(graph, args={}):
     return (graph, None)
 
 
-def dwn_hardware_groupsum_pass(graph, args={}):
+def dwn_hardware_groupsum_pass(graph, args=None):
     """Add hardware metadata to GroupSum nodes."""
     def _is_dwn_groupsum_node(node):
         # GroupSum will appear as a user_defined_module with 'groupsum' in the name
