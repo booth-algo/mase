@@ -163,7 +163,7 @@ def _load_cifar10(args):
         transforms.ToTensor(),
         transforms.Lambda(lambda x: x.view(-1)),
     ])
-    cache = "~/.cache/cifar10"
+    cache = os.path.expanduser("~/.cache/cifar10")
     train_ds = tvdatasets.CIFAR10(cache, train=True,  download=True, transform=transform)
     test_ds  = tvdatasets.CIFAR10(cache, train=False, download=True, transform=transform)
     X_train = torch.stack([x for x, _ in train_ds])
