@@ -10,7 +10,7 @@ Produces two files in the existing RTL output dir:
 Also copies thermometer, groupsum, and clocked layer component SV files into the dir.
 
 Usage:
-    conda run -n plena2 python scripts/emit_full_pipeline_rtl.py --ckpt-name baseline_n6
+    python scripts/emit_full_pipeline_rtl.py --ckpt-name baseline_n6
     # then on beholder0:
     # vivado -mode batch -source synth_dwn.tcl \\
     #   -tclargs <rtl_dir> <results_dir> xcvu9p-flgb2104-2-i full_pipeline_top_clocked 4.0

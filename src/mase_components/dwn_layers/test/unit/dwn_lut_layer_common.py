@@ -1,7 +1,4 @@
-"""Shared classes for DWN LUT layer cocotb testbenches.
-
-Extracted from the DWN LUT layer cocotb testbenches to eliminate duplication.
-"""
+"""Shared classes for DWN LUT layer cocotb testbenches."""
 
 from dataclasses import dataclass
 from typing import List

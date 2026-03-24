@@ -17,7 +17,7 @@ Key features:
 
 Usage:
     cd src/mase_components/dwn_layers/test
-    conda run -n plena2 python -m pytest test_dwn_paper_scope_fullsim.py -v -s
+    python -m pytest test_dwn_paper_scope_fullsim.py -v -s
 
 Environment overrides:
     DWN_CKPT                    : checkpoint path (default: baseline_n6.pt)
@@ -148,13 +148,13 @@ def test_dwn_paper_scope_fullsim():
     assert os.path.exists(ckpt_path), (
         f"Checkpoint not found: {ckpt_path}\n"
         "Train with:\n"
-        "  conda run -n plena2 python test/passes/graph/transforms/dwn/"
+        "  python test/passes/graph/transforms/dwn/"
         "run_dwn_training.py --dataset mnist --hidden-sizes 2000 1000 --lut-n 2"
     )
     assert os.path.exists(rtl_dir), (
         f"RTL directory not found: {rtl_dir}\n"
         "Emit RTL with:\n"
-        "  conda run -n plena2 python scripts/emit_dwn_rtl.py --ckpt-name mnist_n2"
+        "  python scripts/emit_dwn_rtl.py --ckpt-name mnist_n2"
     )
 
     dwn_top_clocked_sv     = os.path.join(rtl_dir, "dwn_top_clocked.sv")

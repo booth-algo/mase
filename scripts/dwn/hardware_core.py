@@ -1,4 +1,4 @@
-"""Shared DWN hardware core wrapper for RTL emission scripts."""
+"""DWN hardware core wrapper — LUT-only subgraph for RTL emission."""
 
 import torch.nn as nn
 
