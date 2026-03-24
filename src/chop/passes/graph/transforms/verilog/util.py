@@ -1,5 +1,3 @@
-import re
-
 from chop.passes.graph.utils import vf
 from chop.passes.graph.analysis.add_metadata.hardware_metadata_layers import (
     INTERNAL_COMP,
@@ -68,9 +66,7 @@ def get_verilog_parameters(graph):
                 new_value += "}"
                 value = new_value
             elif not isinstance(value, (int, float, complex, bool)):
-                # Verilog bit-vector literals (e.g. "64'h0001") must not be quoted
-                if not re.match(r"^\d+'[bBhHoOdD]", str(value)):
-                    value = '"' + value + '"'
+                value = '"' + value + '"'
             assert (
                 f"{node_name}_{key}" not in parameter_map.keys()
             ), f"{node_name}_{key} already exists in the parameter map"
