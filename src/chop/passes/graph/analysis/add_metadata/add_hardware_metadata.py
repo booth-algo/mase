@@ -92,20 +92,24 @@ def add_verilog_param(node):
         "fixed_difflogic_groupsum",
     ]:
         for arg, arg_info in args.items():
-            if arg == "data_in_0":
-                vp[_cap(f"{arg}_tensor_size_dim_0")] = arg_info["shape"][-1]
+            match arg:
+                case "data_in_0":
+                    vp[_cap(f"{arg}_tensor_size_dim_0")] = arg_info["shape"][-1]
         for res, res_info in results.items():
-            if res == "data_out_0":
-                vp[_cap(f"{res}_tensor_size_dim_0")] = res_info["shape"][-1]
+            match res:
+                case "data_out_0":
+                    vp[_cap(f"{res}_tensor_size_dim_0")] = res_info["shape"][-1]
         return
     elif node.meta["mase"]["hardware"].get("module") in ["fixed_difflogic_flatten"]:
         for arg, arg_info in args.items():
-            if arg == "data_in_0":
-                vp[_cap(f"{arg}_tensor_size_dim_0")] = arg_info["shape"][-1]
-                vp[_cap(f"{arg}_tensor_size_dim_1")] = arg_info["shape"][-2]
+            match arg:
+                case "data_in_0":
+                    vp[_cap(f"{arg}_tensor_size_dim_0")] = arg_info["shape"][-1]
+                    vp[_cap(f"{arg}_tensor_size_dim_1")] = arg_info["shape"][-2]
         for res, res_info in results.items():
-            if res == "data_out_0":
-                vp[_cap(f"{res}_tensor_size_dim_0")] = res_info["shape"][-1]
+            match res:
+                case "data_out_0":
+                    vp[_cap(f"{res}_tensor_size_dim_0")] = res_info["shape"][-1]
         return
 
     for arg, arg_info in args.items():
