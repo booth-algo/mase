@@ -1,13 +1,17 @@
-"""Cocotb testbench for fixed_dwn_lut_layer"""
+"""Cocotb testbench for structural_dwn_lut_layer.
+
+The structural variant has no clk/rst ports (purely combinational),
+so this testbench uses Timer-based delays instead of clock edges.
+The test logic mirrors fixed_dwn_lut_layer_tb exactly.
+"""
 
 import random
 from dataclasses import dataclass
 from typing import List
 
 import cocotb
-from cocotb.clock import Clock
 from cocotb.handle import HierarchyObject
-from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb.triggers import Timer
 import torch
 
 
@@ -43,9 +47,7 @@ class LUTLayerConfig:
         return result
 
     def lut_tables(self) -> List[torch.Tensor]:
-        """Unpack LUT_CONTENTS into per-neuron lookup tables (2^LUT_N entries each).
-        RTL packing: LUT_CONTENTS[i*(2**LUT_N) +: (2**LUT_N)]
-        """
+        """Unpack LUT_CONTENTS into per-neuron lookup tables (2^LUT_N entries each)."""
         entries = 1 << self.lut_n
         tables = []
         for i in range(self.num_outputs):
@@ -55,53 +57,38 @@ class LUTLayerConfig:
         return tables
 
 
-# Transaction (sequence item)
+# Transaction
 
 @dataclass
 class LUTLayerTx:
     bits: List[int]  # binary input (0/1), length == num_inputs
 
     def to_rtl_input(self) -> int:
-        """Pack bits into RTL integer (bit 0 → LSB)."""
+        """Pack bits into RTL integer (bit 0 -> LSB)."""
         val = 0
         for i, b in enumerate(self.bits):
             val |= (b & 1) << i
         return val
 
     def to_torch(self) -> torch.Tensor:
-        """Return int32 tensor (num_inputs,)."""
         return torch.tensor(self.bits, dtype=torch.int32)
 
 
-# SW Golden Model — PyTorch tensor LUT lookup
+# SW Golden Model
 
 class LUTLayerSWModel:
-    """
-    Reference model using PyTorch tensor indexing for LUT lookup.
-
-    For each output neuron i:
-      - Build address: addr = sum(bits[input_indices[i][k]] * 2^k, k=0..LUT_N-1)
-      - Output:        out[i] = lut_tables[i][addr]
-
-    This directly mirrors fixed_dwn_lut_neuron.sv:
-        assign data_out_0 = LUT_CONTENTS[data_in_0];
-    where data_in_0 is the concatenated input bits used as a table address.
-    """
-
     def __init__(self, cfg: LUTLayerConfig):
         self.cfg = cfg
-        self.indices = cfg.input_indices()   # list[list[int]], shape (num_out, lut_n)
-        self.tables = cfg.lut_tables()       # list[Tensor(2^lut_n)], one per neuron
+        self.indices = cfg.input_indices()
+        self.tables = cfg.lut_tables()
         self._powers = torch.tensor(
             [1 << k for k in range(cfg.lut_n)], dtype=torch.int32
         )
 
     def predict(self, tx: LUTLayerTx) -> List[int]:
-        """Return list of output bits (one per LUT neuron)."""
         x = tx.to_torch()
         outputs = []
         for i in range(self.cfg.num_outputs):
-            # Gather the input bits this LUT reads, form address
             addr_bits = torch.tensor(
                 [x[self.indices[i][k]].item() for k in range(self.cfg.lut_n)],
                 dtype=torch.int32,
@@ -111,7 +98,6 @@ class LUTLayerSWModel:
         return outputs
 
     def predict_packed(self, tx: LUTLayerTx) -> int:
-        """Return outputs as packed integer (bit i = output of LUT neuron i)."""
         return sum(b << i for i, b in enumerate(self.predict(tx)))
 
 
@@ -141,26 +127,14 @@ class Scoreboard:
             )
 
 
-# Infrastructure
+# Infrastructure (no clock — purely combinational)
 
-async def clock_reset(dut: HierarchyObject) -> None:
-    await cocotb.start(Clock(dut.clk, 3.2, units="ns").start())
-    dut.rst.value = 1
-    dut.data_in_0_valid.value = 0
-    dut.data_out_0_ready.value = 1
-    await ClockCycles(dut.clk, 2)
-    dut.rst.value = 0
-    await RisingEdge(dut.clk)
-
-
-async def driver(dut: HierarchyObject, tx: LUTLayerTx) -> None:
-    """Assert data_in_0 for one clock cycle."""
+async def drive_and_settle(dut: HierarchyObject, tx: LUTLayerTx) -> None:
+    """Assert data_in_0 and wait for combinational propagation."""
     dut.data_in_0.value = tx.to_rtl_input()
     dut.data_in_0_valid.value = 1
     dut.data_out_0_ready.value = 1
-    await RisingEdge(dut.clk)
-    await ClockCycles(dut.clk, 1)   # output stable (combinational)
-    dut.data_in_0_valid.value = 0
+    await Timer(2, units="ns")
 
 
 async def monitor(dut: HierarchyObject) -> int:
@@ -168,7 +142,7 @@ async def monitor(dut: HierarchyObject) -> int:
     return int(dut.data_out_0.value)
 
 
-# Tests (sequences)
+# Tests
 
 @cocotb.test()
 async def test_lut_basic(dut: HierarchyObject) -> None:
@@ -177,11 +151,8 @@ async def test_lut_basic(dut: HierarchyObject) -> None:
     sw = LUTLayerSWModel(cfg)
     sb = Scoreboard(sw)
 
-    await clock_reset(dut)
-    # bits=[0,1,0,1]: LUT0 reads [0,1] addr=2 table=0b1100 out=1
-    #                 LUT1 reads [0,1] addr=2 table=0b1010 out=0
     tx = LUTLayerTx(bits=[0, 1, 0, 1])
-    await driver(dut, tx)
+    await drive_and_settle(dut, tx)
     sb.check(tx, await monitor(dut), label="basic")
 
 
@@ -192,9 +163,8 @@ async def test_lut_all_zeros(dut: HierarchyObject) -> None:
     sw = LUTLayerSWModel(cfg)
     sb = Scoreboard(sw)
 
-    await clock_reset(dut)
     tx = LUTLayerTx(bits=[0, 0, 0, 0])
-    await driver(dut, tx)
+    await drive_and_settle(dut, tx)
     sb.check(tx, await monitor(dut), label="all_zeros")
 
 
@@ -205,21 +175,18 @@ async def test_lut_all_ones(dut: HierarchyObject) -> None:
     sw = LUTLayerSWModel(cfg)
     sb = Scoreboard(sw)
 
-    await clock_reset(dut)
     tx = LUTLayerTx(bits=[1, 1, 1, 1])
-    await driver(dut, tx)
+    await drive_and_settle(dut, tx)
     sb.check(tx, await monitor(dut), label="all_ones")
 
 
 @cocotb.test()
 async def test_lut_valid_ready(dut: HierarchyObject) -> None:
     """Valid/ready pass-through: output valid tracks input valid combinationally."""
-    await clock_reset(dut)
     dut.data_in_0.value = 0
     dut.data_in_0_valid.value = 1
     dut.data_out_0_ready.value = 1
-    await RisingEdge(dut.clk)
-    await ClockCycles(dut.clk, 1)
+    await Timer(2, units="ns")
     assert int(dut.data_out_0_valid.value) == 1, "data_out_0_valid should be 1"
     assert int(dut.data_in_0_ready.value) == 1, "data_in_0_ready should be 1"
 
@@ -231,11 +198,10 @@ async def test_lut_exhaustive(dut: HierarchyObject) -> None:
     sw = LUTLayerSWModel(cfg)
     sb = Scoreboard(sw)
 
-    await clock_reset(dut)
     for val in range(1 << cfg.num_inputs):
         bits = [(val >> i) & 1 for i in range(cfg.num_inputs)]
         tx = LUTLayerTx(bits=bits)
-        await driver(dut, tx)
+        await drive_and_settle(dut, tx)
         sb.check(tx, await monitor(dut), label=f"exhaust[{val:04b}]")
 
     cocotb.log.info(f"[SCOREBOARD] total: {sb.passed} passed, {sb.failed} failed")
