@@ -14,9 +14,7 @@ _CONDA_ENV_BIN = os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")
 if os.path.isdir(_CONDA_ENV_BIN) and _CONDA_ENV_BIN not in os.environ.get("PATH", ""):
     os.environ["PATH"] = _CONDA_ENV_BIN + os.pathsep + os.environ.get("PATH", "")
 
-# ---------------------------------------------------------------------------
 # RTL source directories
-# ---------------------------------------------------------------------------
 FIXED_RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../rtl/fixed"))
 STRUCTURAL_RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../rtl/structural"))
 
@@ -44,9 +42,7 @@ _STRUCTURAL_EXTRA_ARGS = [
     "--Wno-WIDTHEXPAND",
 ]
 
-# ---------------------------------------------------------------------------
 # Fixed RTL tests
-# ---------------------------------------------------------------------------
 
 def test_rtl_groupsum():
     """Run cocotb testbench for fixed_dwn_groupsum."""
@@ -102,9 +98,7 @@ def test_rtl_lut_layer():
     )
 
 
-# ---------------------------------------------------------------------------
 # Structural RTL tests (use behavioral LUT6 sim stub for Verilator)
-# ---------------------------------------------------------------------------
 
 def test_structural_rtl_lut_layer():
     """Run cocotb testbench against structural_dwn_lut_layer.

@@ -10,9 +10,7 @@ import sys
 import types
 
 
-# ---------------------------------------------------------------------------
 # Environment setup helpers
-# ---------------------------------------------------------------------------
 
 def setup_sys_path():
     """
@@ -46,9 +44,7 @@ def setup_conda_path():
         os.environ["PATH"] = _CONDA_ENV_BIN + os.pathsep + os.environ.get("PATH", "")
 
 
-# ---------------------------------------------------------------------------
 # Pure-Python golden-model helpers
-# ---------------------------------------------------------------------------
 
 def sw_forward(x_bits, lut_layers):
     """
@@ -91,9 +87,7 @@ def group_sum_forward(lut_bits, num_classes):
     ]
 
 
-# ---------------------------------------------------------------------------
 # Data loading
-# ---------------------------------------------------------------------------
 
 _DEFAULT_MNIST_CACHE = os.path.expanduser("~/.cache/dwn/mnist/mnist_features.pt")
 

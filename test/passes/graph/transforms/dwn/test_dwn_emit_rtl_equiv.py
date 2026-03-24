@@ -138,9 +138,7 @@ class DWNHardwareCore(nn.Module):
 def test_emitted_top_functional_equiv(model_config):
     """Functional equivalence: emitted dwn_top.sv output must match Python sw_forward."""
 
-    # ------------------------------------------------------------------
     # Skip if Verilator not available
-    # ------------------------------------------------------------------
     if shutil.which("verilator") is None:
         _conda_bin = os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")
         if not os.path.isfile(os.path.join(_conda_bin, "verilator")):
@@ -173,9 +171,7 @@ def test_emitted_top_functional_equiv(model_config):
 
     device = torch.device("cuda")
 
-    # ------------------------------------------------------------------
     # Build model: chain of LUTLayers from input_size through hidden_sizes
-    # ------------------------------------------------------------------
     torch.manual_seed(seed)
     sizes = [input_size] + hidden_sizes
     lut_layers = [
@@ -194,9 +190,7 @@ def test_emitted_top_functional_equiv(model_config):
     output_size = hidden_sizes[-1]
     dummy_input = torch.randint(0, 2, (1, input_size)).float().to(device)
 
-    # ------------------------------------------------------------------
     # Build MaseGraph
-    # ------------------------------------------------------------------
     graph = MaseGraph(
         model,
         custom_ops={
@@ -214,9 +208,7 @@ def test_emitted_top_functional_equiv(model_config):
         },
     )
 
-    # ------------------------------------------------------------------
     # Metadata passes
-    # ------------------------------------------------------------------
     graph, _ = init_metadata_analysis_pass(graph)
     graph, _ = add_common_metadata_analysis_pass(
         graph,
@@ -229,9 +221,7 @@ def test_emitted_top_functional_equiv(model_config):
     graph, _ = dwn_hardware_metadata_pass(graph)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        # ------------------------------------------------------------------
         # Emit Verilog
-        # ------------------------------------------------------------------
         graph, _ = emit_verilog_top_transform_pass(
             graph,
             pass_args={
@@ -243,9 +233,7 @@ def test_emitted_top_functional_equiv(model_config):
         sv_top = os.path.join(tmp_dir, "hardware", "rtl", "dwn_top.sv")
         assert os.path.exists(sv_top), f"dwn_top.sv not generated at {sv_top}"
 
-        # ------------------------------------------------------------------
         # Copy internal RTL dependencies
-        # ------------------------------------------------------------------
         graph, _ = emit_internal_rtl_transform_pass(
             graph,
             pass_args={"project_dir": tmp_dir},
@@ -259,9 +247,7 @@ def test_emitted_top_functional_equiv(model_config):
         )
         assert sv_files, f"No .sv files found in {rtl_dir}"
 
-        # ------------------------------------------------------------------
         # Generate SW test vectors using sw_forward (pure-Python LUT cascade)
-        # ------------------------------------------------------------------
         # Move layers to CPU for sw_forward
         cpu_layers = [layer.cpu() for layer in lut_layers]
 
@@ -275,9 +261,7 @@ def test_emitted_top_functional_equiv(model_config):
             out_packed = sum(b << i for i, b in enumerate(out_bits))
             vectors.append({"input": val, "expected": out_packed})
 
-        # ------------------------------------------------------------------
         # Write test vectors JSON and cocotb testbench
-        # ------------------------------------------------------------------
         vectors_path = os.path.join(tmp_dir, "test_vectors.json")
         with open(vectors_path, "w") as f:
             json.dump(vectors, f)
@@ -286,9 +270,7 @@ def test_emitted_top_functional_equiv(model_config):
         with open(tb_path, "w") as f:
             f.write(_TB_SOURCE)
 
-        # ------------------------------------------------------------------
         # Run Verilator simulation via cocotb
-        # ------------------------------------------------------------------
         sim_runner.run(
             verilog_sources=sv_files,
             toplevel="dwn_top",

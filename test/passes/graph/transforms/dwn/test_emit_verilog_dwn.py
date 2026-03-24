@@ -76,7 +76,7 @@ def test_emit_verilog_dwn_lut_layer():
 
     device = torch.device("cuda")
 
-    # ------------------------------------------------------------------ model
+    # Build a tiny DWN model
     INPUT_SIZE = 8
     OUTPUT_SIZE = 4
     LUT_N = 2
@@ -99,7 +99,7 @@ def test_emit_verilog_dwn_lut_layer():
 
     dummy_input = torch.randint(0, 2, (1, INPUT_SIZE)).float().to(device)
 
-    # ------------------------------------------------------------------ graph
+    # Build MaseGraph
     # custom_ops "modules" keys must be class objects (not strings)
     graph = MaseGraph(
         model,
@@ -118,7 +118,7 @@ def test_emit_verilog_dwn_lut_layer():
         },
     )
 
-    # ------------------------------------------------------------------ metadata
+    # Run metadata passes
     graph, _ = init_metadata_analysis_pass(graph)
     graph, _ = add_common_metadata_analysis_pass(
         graph,
@@ -130,7 +130,7 @@ def test_emit_verilog_dwn_lut_layer():
     graph, _ = add_hardware_metadata_analysis_pass(graph)
     graph, _ = dwn_hardware_metadata_pass(graph)
 
-    # ------------------------------------------------------------------ emit
+    # Emit Verilog
     with tempfile.TemporaryDirectory() as tmp_dir:
         graph, _ = emit_verilog_top_transform_pass(
             graph,
@@ -146,7 +146,7 @@ def test_emit_verilog_dwn_lut_layer():
         with open(sv_path) as f:
             sv = f.read()
 
-    # ------------------------------------------------------------------ checks
+    # Verify generated Verilog
     # Bug 1 fix: parameter references must use lowercase node prefix
     assert "lut_INPUT_SIZE" in sv, "Expected 'lut_INPUT_SIZE' parameter in Verilog"
     assert "lut_OUTPUT_SIZE" in sv, "Expected 'lut_OUTPUT_SIZE' parameter in Verilog"
