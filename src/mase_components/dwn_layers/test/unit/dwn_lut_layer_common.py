@@ -1,7 +1,6 @@
 """Shared classes for DWN LUT layer cocotb testbenches.
 
-Extracted from fixed_dwn_lut_layer_tb.py and structural_dwn_lut_layer_tb.py
-to eliminate duplication.
+Extracted from the DWN LUT layer cocotb testbenches to eliminate duplication.
 """
 
 from dataclasses import dataclass

@@ -110,7 +110,7 @@ def test_structural_rtl_lut_layer():
     """Run cocotb testbench against structural_dwn_lut_layer.
 
     The structural variant has the same data/valid/ready ports but no clk/rst
-    (purely combinational), so it uses a dedicated Timer-based testbench.
+    (purely combinational).  The unified testbench auto-detects the DUT type.
     """
     # INPUT_INDICES packed with INDEX_BITS=2 (for INPUT_SIZE=4):
     # LUT0 reads [idx0=0, idx1=1], LUT1 reads [idx0=2, idx1=3]
@@ -121,7 +121,7 @@ def test_structural_rtl_lut_layer():
     simulator.run(
         verilog_sources=STRUCTURAL_VERILOG_SOURCES,
         toplevel="structural_dwn_lut_layer",
-        module="structural_dwn_lut_layer_tb",
+        module="fixed_dwn_lut_layer_tb",
         simulator="verilator",
         waves=False,
         extra_args=_STRUCTURAL_EXTRA_ARGS,

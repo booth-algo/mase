@@ -1,11 +1,14 @@
 """End-to-end functional equivalence test: emitted dwn_top.sv vs Python LUTLayer.
 
-Builds a tiny TinyDWN model, runs the full emit pipeline, then drives the
-generated Verilog through Verilator via cocotb and checks that every output
-matches the Python reference model.
+Builds a DWN model from parametrized config, runs the full emit pipeline, then
+drives the generated Verilog through Verilator via cocotb and checks that every
+output matches the Python reference model (sw_forward).
+
+Parametrized over single-layer and multi-layer configurations.
 """
 import json
 import os
+import random
 import shutil
 import sys
 import tempfile
@@ -17,14 +20,25 @@ import torch.nn as nn
 _src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../src"))
 sys.path.insert(0, _src)
 
+# Also add the integration test directory so we can reuse dwn_test_utils
+_integration_dir = os.path.abspath(
+    os.path.join(
+        _src,
+        "mase_components/dwn_layers/test/integration",
+    )
+)
+if _integration_dir not in sys.path:
+    sys.path.insert(0, _integration_dir)
+
+from dwn_test_utils import setup_sys_path, setup_conda_path, sw_forward
+
+setup_sys_path()
+setup_conda_path()
+
 CUDA_AVAILABLE = torch.cuda.is_available()
 requires_cuda = pytest.mark.skipif(
     not CUDA_AVAILABLE, reason="EFDFunction requires CUDA"
 )
-
-INPUT_SIZE = 8
-OUTPUT_SIZE = 4
-LUT_N = 2
 
 
 # Cocotb testbench source (written to tempdir at test-time)
@@ -87,17 +101,47 @@ async def test_equiv(dut):
 '''
 
 
-# Test
+class DWNHardwareCore(nn.Module):
+    """Wrapper that chains one or more LUTLayers for the emit pipeline."""
+
+    def __init__(self, lut_layers):
+        super().__init__()
+        self.lut_layers = nn.ModuleList(lut_layers)
+
+    def forward(self, x):
+        for layer in self.lut_layers:
+            x = layer(x)
+        return x
+
 
 @requires_cuda
-def test_emitted_top_functional_equiv():
-    """Functional equivalence: emitted dwn_top.sv output must match Python LUTLayer."""
+@pytest.mark.parametrize(
+    "model_config",
+    [
+        {
+            "name": "single_layer",
+            "input_size": 8,
+            "hidden_sizes": [4],
+            "lut_n": 2,
+            "seed": 42,
+        },
+        {
+            "name": "multi_layer",
+            "input_size": 16,
+            "hidden_sizes": [8, 4],
+            "lut_n": 2,
+            "seed": 42,
+        },
+    ],
+    ids=["1-layer-8in", "2-layer-16in"],
+)
+def test_emitted_top_functional_equiv(model_config):
+    """Functional equivalence: emitted dwn_top.sv output must match Python sw_forward."""
 
     # ------------------------------------------------------------------
     # Skip if Verilator not available
     # ------------------------------------------------------------------
     if shutil.which("verilator") is None:
-        # Also check conda env bin
         _conda_bin = os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")
         if not os.path.isfile(os.path.join(_conda_bin, "verilator")):
             pytest.skip("verilator not found on PATH")
@@ -122,29 +166,33 @@ def test_emitted_top_functional_equiv():
     )
     from mase_components.dwn_layers.passes import dwn_hardware_metadata_pass
 
+    input_size = model_config["input_size"]
+    hidden_sizes = model_config["hidden_sizes"]
+    lut_n = model_config["lut_n"]
+    seed = model_config["seed"]
+
     device = torch.device("cuda")
 
     # ------------------------------------------------------------------
-    # Build model
+    # Build model: chain of LUTLayers from input_size through hidden_sizes
     # ------------------------------------------------------------------
-    class TinyDWN(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.lut = LUTLayer(
-                input_size=INPUT_SIZE,
-                output_size=OUTPUT_SIZE,
-                n=LUT_N,
-                mapping="random",
-            )
-
-        def forward(self, x):
-            return self.lut(x)
-
-    torch.manual_seed(42)
-    model = TinyDWN().to(device)
+    torch.manual_seed(seed)
+    sizes = [input_size] + hidden_sizes
+    lut_layers = [
+        LUTLayer(
+            input_size=sizes[i],
+            output_size=sizes[i + 1],
+            n=lut_n,
+            mapping="random",
+        )
+        for i in range(len(sizes) - 1)
+    ]
+    model = DWNHardwareCore(lut_layers)
     model.eval()
+    model = model.to(device)
 
-    dummy_input = torch.randint(0, 2, (1, INPUT_SIZE)).float().to(device)
+    output_size = hidden_sizes[-1]
+    dummy_input = torch.randint(0, 2, (1, input_size)).float().to(device)
 
     # ------------------------------------------------------------------
     # Build MaseGraph
@@ -212,39 +260,20 @@ def test_emitted_top_functional_equiv():
         assert sv_files, f"No .sv files found in {rtl_dir}"
 
         # ------------------------------------------------------------------
-        # Extract Python model predictions
+        # Generate SW test vectors using sw_forward (pure-Python LUT cascade)
         # ------------------------------------------------------------------
-        lut_layer = model.lut
-        lut_layer.eval()
+        # Move layers to CPU for sw_forward
+        cpu_layers = [layer.cpu() for layer in lut_layers]
 
-        torch.manual_seed(0)
-        test_inputs = torch.randint(0, 2, (256, INPUT_SIZE)).float().to(device)
-
-        with torch.no_grad():
-            py_outputs = lut_layer(test_inputs)  # (256, OUTPUT_SIZE)
-
-        # Pack input bits into integer (bit i = input feature i)
-        def _pack_input(row):
-            val = 0
-            for i, b in enumerate(row):
-                val |= (int(b.item()) & 1) << i
-            return val
-
-        # Pack output bits into integer (bit i = output neuron i)
-        def _pack_output(row):
-            val = 0
-            for i, b in enumerate(row):
-                val |= (int(b.item()) & 1) << i
-            return val
-
+        rng = random.Random(seed)
+        max_in = (1 << input_size) - 1
         vectors = []
-        for inp_row, out_row in zip(test_inputs, py_outputs):
-            vectors.append(
-                {
-                    "input": _pack_input(inp_row),
-                    "expected": _pack_output(out_row),
-                }
-            )
+        for _ in range(256):
+            val = rng.randint(0, max_in)
+            bits = [(val >> i) & 1 for i in range(input_size)]
+            out_bits = sw_forward(bits, cpu_layers)
+            out_packed = sum(b << i for i, b in enumerate(out_bits))
+            vectors.append({"input": val, "expected": out_packed})
 
         # ------------------------------------------------------------------
         # Write test vectors JSON and cocotb testbench
@@ -267,6 +296,5 @@ def test_emitted_top_functional_equiv():
             simulator="verilator",
             waves=False,
             extra_env={"TEST_VECTORS_PATH": vectors_path},
-            # cocotb_test searches this list for the testbench module
             python_search=[tmp_dir],
         )
