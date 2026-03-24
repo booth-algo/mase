@@ -95,7 +95,7 @@ def group_sum_forward(lut_bits, num_classes):
 # Data loading
 # ---------------------------------------------------------------------------
 
-_DEFAULT_MNIST_CACHE = "/data/datasets/mnist/mnist_features.pt"
+_DEFAULT_MNIST_CACHE = os.path.expanduser("~/.cache/dwn/mnist/mnist_features.pt")
 
 
 def load_mnist_test(num_samples):

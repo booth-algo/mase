@@ -324,7 +324,10 @@ def main():
     if os.path.exists(ckpt_path):
         print(f"Loading checkpoint: {ckpt_path}")
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-        cfg = ckpt["model_config"]
+        cfg = ckpt.get("model_config")
+        if cfg is None:
+            print("ERROR: checkpoint missing 'model_config' key")
+            sys.exit(1)
         state = ckpt["model_state_dict"]
 
         thres_key = "thermometer.thresholds"
@@ -362,11 +365,12 @@ def main():
     # Copy component files
     component_src = os.path.join(os.path.dirname(__file__),
                                   "../src/mase_components/dwn_layers/rtl")
-    for fname in ["fixed_dwn_thermometer.sv", "fixed_dwn_groupsum.sv",
-                  "fixed_dwn_lut_layer_clocked.sv", "fixed_dwn_groupsum_pipelined.sv"]:
-        dst = os.path.join(rtl_dir, fname)
+    for fname in ["fixed/fixed_dwn_thermometer.sv", "fixed/fixed_dwn_groupsum.sv",
+                  "fixed/fixed_dwn_lut_layer_clocked.sv", "fixed/fixed_dwn_groupsum_pipelined.sv"]:
+        basename = os.path.basename(fname)
+        dst = os.path.join(rtl_dir, basename)
         shutil.copy(os.path.join(component_src, fname), dst)
-        print(f"Copied: {fname}")
+        print(f"Copied: {basename}")
 
     emit_wrapper(rtl_dir, cfg, thresholds_sv, args.feature_width)
     emit_clocked_wrapper(rtl_dir, cfg, thresholds_sv, args.feature_width)

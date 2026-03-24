@@ -109,8 +109,8 @@ def test_emit_verilog_dwn_lut_layer():
                     "args": {"x": "data_in"},
                     "module": "fixed_dwn_lut_layer",
                     "dependence_files": [
-                        "dwn_layers/rtl/fixed_dwn_lut_neuron.sv",
-                        "dwn_layers/rtl/fixed_dwn_lut_layer.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_neuron.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_layer.sv",
                     ],
                 }
             },
@@ -143,7 +143,8 @@ def test_emit_verilog_dwn_lut_layer():
         sv_path = os.path.join(tmp_dir, "hardware", "rtl", "dwn_top.sv")
         assert os.path.exists(sv_path), f"Verilog file not generated at {sv_path}"
 
-        sv = open(sv_path).read()
+        with open(sv_path) as f:
+            sv = f.read()
 
     # ------------------------------------------------------------------ checks
     # Bug 1 fix: parameter references must use lowercase node prefix

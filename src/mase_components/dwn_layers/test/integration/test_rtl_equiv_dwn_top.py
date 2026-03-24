@@ -7,7 +7,6 @@ a pure-Python SW LUT model to verify end-to-end correctness.
 import json
 import os
 import random
-import sys
 import tempfile
 
 from dwn_test_utils import setup_sys_path, setup_conda_path, sw_forward
@@ -16,7 +15,6 @@ setup_sys_path()
 setup_conda_path()
 
 import cocotb_test.simulator as simulator
-import pytest
 import torch
 import torch.nn as nn
 
@@ -86,8 +84,8 @@ def test_rtl_dwn_top_equiv():
                         "args": {"x": "data_in"},
                         "module": "fixed_dwn_lut_layer",
                         "dependence_files": [
-                            "dwn_layers/rtl/fixed_dwn_lut_neuron.sv",
-                            "dwn_layers/rtl/fixed_dwn_lut_layer.sv",
+                            "dwn_layers/rtl/fixed/fixed_dwn_lut_neuron.sv",
+                            "dwn_layers/rtl/fixed/fixed_dwn_lut_layer.sv",
                         ],
                     }
                 },
@@ -131,20 +129,27 @@ def test_rtl_dwn_top_equiv():
         }
         with open(config_path, "w") as f:
             json.dump(config, f)
-        os.environ["DWN_TOP_EQUIV_CONFIG"] = config_path
+        old_val = os.environ.get("DWN_TOP_EQUIV_CONFIG")
+        try:
+            os.environ["DWN_TOP_EQUIV_CONFIG"] = config_path
 
-        # ----- run cocotb simulation -----
-        simulator.run(
-            verilog_sources=[
-                os.path.join(RTL_DIR, "fixed_dwn_lut_neuron.sv"),
-                os.path.join(RTL_DIR, "fixed_dwn_lut_layer.sv"),
-                dwn_top_sv,
-            ],
-            toplevel="dwn_top",
-            module="dwn_top_equiv_tb",
-            simulator="verilator",
-            waves=False,
-            build_dir=os.path.join(os.path.dirname(__file__), "sim_build_dwn_top"),
-            python_search_path=[os.path.dirname(__file__)],
-            extra_args=["--Wno-TIMESCALEMOD"],
-        )
+            # ----- run cocotb simulation -----
+            simulator.run(
+                verilog_sources=[
+                    os.path.join(RTL_DIR, "fixed", "fixed_dwn_lut_neuron.sv"),
+                    os.path.join(RTL_DIR, "fixed", "fixed_dwn_lut_layer.sv"),
+                    dwn_top_sv,
+                ],
+                toplevel="dwn_top",
+                module="dwn_top_equiv_tb",
+                simulator="verilator",
+                waves=False,
+                build_dir=os.path.join(os.path.dirname(__file__), "sim_build_dwn_top"),
+                python_search_path=[os.path.dirname(__file__)],
+                extra_args=["--Wno-TIMESCALEMOD"],
+            )
+        finally:
+            if old_val is None:
+                os.environ.pop("DWN_TOP_EQUIV_CONFIG", None)
+            else:
+                os.environ["DWN_TOP_EQUIV_CONFIG"] = old_val

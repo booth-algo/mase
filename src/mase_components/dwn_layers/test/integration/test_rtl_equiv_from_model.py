@@ -6,29 +6,23 @@ them to a JSON config file, then runs the cocotb testbench (dwn_lut_layer_equiv_
 against the RTL via Verilator.
 """
 import json
+import math
 import os
-import sys
+
+from dwn_test_utils import setup_sys_path, setup_conda_path
+
+setup_sys_path()
+setup_conda_path()
 
 import cocotb_test.simulator as simulator
 import pytest
 import torch
 
-# sys.path setup — mirrors test_rtl_sim.py so chop packages are importable
-
-_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-
-# Ensure verilator is discoverable by shutil.which (cocotb_test uses it internally).
-_CONDA_ENV_BIN = os.path.join(os.environ.get("CONDA_PREFIX", ""), "bin")
-if os.path.isdir(_CONDA_ENV_BIN) and _CONDA_ENV_BIN not in os.environ.get("PATH", ""):
-    os.environ["PATH"] = _CONDA_ENV_BIN + os.pathsep + os.environ.get("PATH", "")
-
 # RTL sources — same as test_rtl_sim.py
 
 RTL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../rtl"))
 VERILOG_SOURCES = [
-    os.path.join(RTL_DIR, f) for f in [
+    os.path.join(RTL_DIR, "fixed", f) for f in [
         "fixed_dwn_lut_layer.sv",
         "fixed_dwn_lut_neuron.sv",
         "fixed_dwn_thermometer.sv",
@@ -40,22 +34,28 @@ VERILOG_SOURCES = [
 
 # Parameter packing helper
 
-def _pack_lut_params(lut_layer):
-    indices = lut_layer.get_input_indices()  # (output_size, n)
-    output_size = lut_layer.output_size
-    lut_n = lut_layer.n
+def _pack_lut_params(layer):
+    indices = layer.get_input_indices()  # shape [output_size, lut_n]
+    contents = layer.get_lut_contents()  # shape [output_size, 2**lut_n]
+    input_size = layer.input_size
+    output_size = layer.output_size
+    lut_n = layer.n
+
+    index_bits = max(1, math.ceil(math.log2(input_size))) if input_size > 1 else 1
+
     packed_indices = 0
     for i in range(output_size):
         for k in range(lut_n):
-            idx = int(indices[i, k].item()) & 0xFF
-            packed_indices |= idx << ((i * lut_n + k) * 8)
-    contents = lut_layer.get_lut_contents()  # (output_size, 2^n)
-    lut_entries = 2 ** lut_n
+            idx = int(indices[i, k].item()) & ((1 << index_bits) - 1)
+            packed_indices |= idx << ((i * lut_n + k) * index_bits)
+
     packed_contents = 0
+    entries = 1 << lut_n
     for i in range(output_size):
-        for j in range(lut_entries):
-            bit = int(contents[i, j].item()) & 1
-            packed_contents |= bit << (i * lut_entries + j)
+        for e in range(entries):
+            bit = int(contents[i, e].item()) & 1
+            packed_contents |= bit << (i * entries + e)
+
     return packed_indices, packed_contents
 
 
@@ -104,6 +104,10 @@ def test_rtl_lut_layer_from_trained_model():
                 "INPUT_INDICES": packed_indices,
                 "LUT_CONTENTS": packed_contents,
             },
+            python_search=[
+                os.path.dirname(__file__),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "../unit")),
+            ],
         )
     finally:
         if os.path.exists(config_path):

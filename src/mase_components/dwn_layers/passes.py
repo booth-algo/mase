@@ -121,6 +121,8 @@ def dwn_hardware_force_fixed_flatten_pass(graph, args=None):
     Mirrors difflogic_hardware_force_fixed_flatten_pass.
     """
     for node in graph.nodes:
+        if node.op not in ("call_module", "call_function"):
+            continue
         if node.meta["mase"]["common"]["mase_op"] == "flatten":
             node.meta["mase"]["hardware"]["toolchain"] = "INTERNAL_RTL"
             node.meta["mase"]["hardware"]["module"] = "fixed_dwn_flatten"

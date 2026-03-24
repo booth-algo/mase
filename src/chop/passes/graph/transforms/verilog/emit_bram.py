@@ -183,7 +183,6 @@ endmodule
         f"ROM module {verilog_param_name} successfully written into {file_name}"
     )
     assert os.path.isfile(file_name), "ROM Verilog generation failed."
-    # os.system(f"verible-verilog-format --inplace {file_name}")
 
 
 def emit_parameters_in_dat_internal(node, param_name, file_name):
@@ -458,7 +457,6 @@ endmodule
         outf.write(rom_verilog)
     logger.debug(f"ROM module {param_name} successfully written into {file_name}")
     assert os.path.isfile(file_name), "ROM Verilog generation failed."
-    # os.system(f"verible-verilog-format --inplace {file_name}")
 
 
 def emit_bram_hls(node, rtl_dir):

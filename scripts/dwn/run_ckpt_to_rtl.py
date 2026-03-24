@@ -8,6 +8,7 @@ Load a trained DWN checkpoint and emit Verilog RTL using the MASE pipeline.
 """
 import sys
 import os
+import re
 import types
 import argparse
 
@@ -63,17 +64,7 @@ from chop.nn.dwn import DWNModel
 # DWNHardwareCore — LUT layers only (no thermometer, no group_sum)
 #
 
-class DWNHardwareCore(nn.Module):
-    """Thin wrapper around the LUT-layer stack for RTL emission."""
-
-    def __init__(self, lut_layers):
-        super().__init__()
-        self.lut_layers = nn.ModuleList(lut_layers)
-
-    def forward(self, x):
-        for layer in self.lut_layers:
-            x = layer(x)
-        return x
+from hardware_core import DWNHardwareCore
 
 
 #
@@ -119,6 +110,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', args.top_name):
+        print(f"ERROR: --top-name must be a valid Verilog identifier, got: {args.top_name}")
+        return 1
+
     torch.manual_seed(args.seed)
 
     # --- device selection ---
@@ -230,8 +226,8 @@ def main():
                     "args": {"x": "data_in"},
                     "module": "fixed_dwn_lut_layer",
                     "dependence_files": [
-                        "dwn_layers/rtl/fixed_dwn_lut_neuron.sv",
-                        "dwn_layers/rtl/fixed_dwn_lut_layer.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_neuron.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_layer.sv",
                     ],
                 }
             },

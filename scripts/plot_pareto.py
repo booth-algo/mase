@@ -30,8 +30,8 @@ def read_acc(path):
         import torch
         ckpt = torch.load(path, map_location="cpu", weights_only=True)
         return ckpt.get("acc", ckpt.get("best_acc"))
-    except Exception as e:
-        warnings.warn(f"Failed to load {path}: {e}")
+    except (RuntimeError, FileNotFoundError, KeyError) as exc:
+        warnings.warn(f"Could not load {path}: {exc}")
         return None
 
 
@@ -43,8 +43,8 @@ def read_model_config(path):
         import torch
         ckpt = torch.load(path, map_location="cpu", weights_only=True)
         return ckpt.get("model_config")
-    except Exception as e:
-        warnings.warn(f"Failed to load model_config from {path}: {e}")
+    except (RuntimeError, FileNotFoundError, KeyError) as exc:
+        warnings.warn(f"Could not load model_config from {path}: {exc}")
         return None
 
 

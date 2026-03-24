@@ -130,6 +130,10 @@ def parse_args():
 def main():
     args = parse_args()
 
+    if hasattr(args, 'ckpt_name') and args.ckpt_name and not re.match(r'^[\w\-]+$', args.ckpt_name):
+        print(f"ERROR: --ckpt-name must be alphanumeric/hyphens/underscores, got: {args.ckpt_name}")
+        sys.exit(1)
+
     ckpt_dir = os.path.join(os.path.dirname(__file__), "../mase_output/dwn")
     ckpt_path = args.ckpt or os.path.join(ckpt_dir, f"{args.ckpt_name}.pt")
     output_dir = args.output_dir or os.path.join(ckpt_dir, f"{args.ckpt_name}_rtl")
@@ -140,7 +144,10 @@ def main():
 
     print(f"Loading checkpoint: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    cfg = ckpt["model_config"]
+    cfg = ckpt.get("model_config")
+    if cfg is None:
+        print("ERROR: checkpoint missing 'model_config' key")
+        sys.exit(1)
     print(f"  Config: hidden_sizes={cfg['hidden_sizes']}, lut_n={cfg['lut_n']}, "
           f"num_bits={cfg['num_bits']}, mapping_first={cfg['mapping_first']}")
 
@@ -182,16 +189,7 @@ def main():
     # The thermometer encoding is a software preprocessing step (not hardware),
     # and GroupSum is a simple integer adder not requiring MASE RTL emission.
     # The hardware input is thermometer-encoded binary: shape (B, input_features * num_bits).
-    class DWNHardwareCore(nn.Module):
-        """LUT-layer stack only — the synthesisable hardware core."""
-        def __init__(self, lut_layers):
-            super().__init__()
-            self.lut_layers = nn.ModuleList(lut_layers)
-
-        def forward(self, x):
-            for layer in self.lut_layers:
-                x = layer(x)
-            return x
+    from dwn.hardware_core import DWNHardwareCore
 
     hw_model = DWNHardwareCore(list(model.lut_layers)).to(device)
     hw_model.eval()
@@ -209,8 +207,8 @@ def main():
                     "args": {"x": "data_in"},
                     "module": "fixed_dwn_lut_layer",
                     "dependence_files": [
-                        "dwn_layers/rtl/fixed_dwn_lut_neuron.sv",
-                        "dwn_layers/rtl/fixed_dwn_lut_layer.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_neuron.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_layer.sv",
                     ],
                 }
             },
@@ -270,7 +268,7 @@ def main():
         import shutil
         clocked_layer_src = os.path.join(
             os.path.dirname(__file__),
-            "../src/mase_components/dwn_layers/rtl/fixed_dwn_lut_layer_clocked.sv",
+            "../src/mase_components/dwn_layers/rtl/fixed/fixed_dwn_lut_layer_clocked.sv",
         )
         clocked_layer_dst = os.path.join(rtl_dir, "fixed_dwn_lut_layer_clocked.sv")
         shutil.copy(clocked_layer_src, clocked_layer_dst)

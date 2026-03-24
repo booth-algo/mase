@@ -29,7 +29,6 @@ Environment overrides:
 
 import json
 import os
-import sys
 
 from dwn_test_utils import setup_sys_path, setup_conda_path, sw_forward, load_mnist_test
 
@@ -206,7 +205,6 @@ def test_dwn_mnist_fullsim():
     }
     with open(config_path, "w") as f:
         json.dump(config, f)
-    os.environ["DWN_MNIST_UVM_CONFIG"] = config_path
     print(f"[test] UVM config written to: {config_path}")
 
     # ---- Run cocotb UVM simulation ----
@@ -214,18 +212,26 @@ def test_dwn_mnist_fullsim():
     # make_args fixes a Verilator/GCC PCH bug: CFG_CXXFLAGS_PCH_I is empty in
     # the conda-packaged Verilator, causing GCC to treat the .fast PCH hint as
     # a linker input instead of a precompiled-header prefix.
-    simulator.run(
-        verilog_sources=[
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_lut_neuron.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_lut_layer.sv"),
-            dwn_top_sv,
-        ],
-        toplevel="dwn_top",
-        module="dwn_mnist_uvm_tb",
-        simulator="verilator",
-        waves=False,
-        build_dir=os.path.join(os.path.dirname(__file__), "sim_build_dwn_mnist_uvm"),
-        python_search_path=[os.path.dirname(__file__)],
-        extra_args=["--Wno-TIMESCALEMOD"],
-        make_args=["CFG_CXXFLAGS_PCH_I=-include"],
-    )
+    old_val = os.environ.get("DWN_MNIST_UVM_CONFIG")
+    try:
+        os.environ["DWN_MNIST_UVM_CONFIG"] = config_path
+        simulator.run(
+            verilog_sources=[
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_lut_neuron.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_lut_layer.sv"),
+                dwn_top_sv,
+            ],
+            toplevel="dwn_top",
+            module="dwn_mnist_uvm_tb",
+            simulator="verilator",
+            waves=False,
+            build_dir=os.path.join(os.path.dirname(__file__), "sim_build_dwn_mnist_uvm"),
+            python_search_path=[os.path.dirname(__file__)],
+            extra_args=["--Wno-TIMESCALEMOD"],
+            make_args=["CFG_CXXFLAGS_PCH_I=-include"],
+        )
+    finally:
+        if old_val is None:
+            os.environ.pop("DWN_MNIST_UVM_CONFIG", None)
+        else:
+            os.environ["DWN_MNIST_UVM_CONFIG"] = old_val

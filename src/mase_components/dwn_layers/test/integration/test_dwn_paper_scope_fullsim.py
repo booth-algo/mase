@@ -28,7 +28,6 @@ Environment overrides:
 
 import json
 import os
-import sys
 
 from dwn_test_utils import (
     setup_sys_path, setup_conda_path, sw_forward, group_sum_forward, load_mnist_test,
@@ -213,7 +212,6 @@ def test_dwn_paper_scope_fullsim():
     }
     with open(config_path, "w") as f:
         json.dump(config, f)
-    os.environ["DWN_PAPER_SCOPE_UVM_CONFIG"] = config_path
     print(f"[test] UVM config written to: {config_path}")
 
     # ---- Run cocotb UVM simulation ----
@@ -221,21 +219,29 @@ def test_dwn_paper_scope_fullsim():
     # make_args fixes a Verilator/GCC PCH bug: CFG_CXXFLAGS_PCH_I is empty in
     # the conda-packaged Verilator, causing GCC to treat the .fast PCH hint as
     # a linker input instead of a precompiled-header prefix.
-    simulator.run(
-        verilog_sources=[
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_lut_neuron.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_lut_layer_clocked.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_groupsum_pipelined.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "dwn_paper_scope_sim_wrapper.sv"),
-            dwn_top_clocked_sv,
-            dwn_top_paper_scope_sv,
-        ],
-        toplevel="dwn_paper_scope_sim_wrapper",
-        module="dwn_paper_scope_uvm_tb",
-        simulator="verilator",
-        waves=False,
-        build_dir=os.path.join(os.path.dirname(__file__), "sim_build_paper_scope"),
-        python_search_path=[os.path.dirname(__file__)],
-        extra_args=["--Wno-TIMESCALEMOD"],
-        make_args=["CFG_CXXFLAGS_PCH_I=-include"],
-    )
+    old_val = os.environ.get("DWN_PAPER_SCOPE_UVM_CONFIG")
+    try:
+        os.environ["DWN_PAPER_SCOPE_UVM_CONFIG"] = config_path
+        simulator.run(
+            verilog_sources=[
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_lut_neuron.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_lut_layer_clocked.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_groupsum_pipelined.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "dwn_paper_scope_sim_wrapper.sv"),
+                dwn_top_clocked_sv,
+                dwn_top_paper_scope_sv,
+            ],
+            toplevel="dwn_paper_scope_sim_wrapper",
+            module="dwn_paper_scope_uvm_tb",
+            simulator="verilator",
+            waves=False,
+            build_dir=os.path.join(os.path.dirname(__file__), "sim_build_paper_scope"),
+            python_search_path=[os.path.dirname(__file__)],
+            extra_args=["--Wno-TIMESCALEMOD"],
+            make_args=["CFG_CXXFLAGS_PCH_I=-include"],
+        )
+    finally:
+        if old_val is None:
+            os.environ.pop("DWN_PAPER_SCOPE_UVM_CONFIG", None)
+        else:
+            os.environ["DWN_PAPER_SCOPE_UVM_CONFIG"] = old_val

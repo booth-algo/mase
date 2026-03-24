@@ -44,6 +44,7 @@ async def test_pipeline_depth(dut):
     await RisingEdge(dut.clk)   # E1: txn#0 captured in FF1
 
     # Continue streaming txn#1, 2, ... while checking output
+    found_match = False
     for extra in range(1, 9):
         # Drive next transaction
         if extra < len(txns):
@@ -53,7 +54,11 @@ async def test_pipeline_depth(dut):
         flat_val   = int(dut.data_out_0_flat.value)
         rtl_scores = [(flat_val >> (i * 8)) & 0xFF for i in range(nc)]
         match = (rtl_scores == txn0_expected)
+        if match:
+            found_match = True
         cocotb.log.info(
             f"  extra_wait={extra}:  rtl={rtl_scores}  "
             f"exp={txn0_expected}  match={match}"
         )
+
+    assert found_match, f"No pipeline delay 1..8 produced the expected output for transaction #0"

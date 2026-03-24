@@ -65,23 +65,30 @@ def test_pipeline_depth_probe():
     }
     with open(config_path, "w") as f:
         json.dump(config, f)
-    os.environ["DWN_PAPER_SCOPE_UVM_CONFIG"] = config_path
+    old_val = os.environ.get("DWN_PAPER_SCOPE_UVM_CONFIG")
+    try:
+        os.environ["DWN_PAPER_SCOPE_UVM_CONFIG"] = config_path
 
-    simulator.run(
-        verilog_sources=[
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_lut_neuron.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_lut_layer_clocked.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "fixed_dwn_groupsum_pipelined.sv"),
-            os.path.join(RTL_COMPONENT_DIR, "dwn_paper_scope_sim_wrapper.sv"),
-            os.path.join(rtl_dir, "dwn_top_clocked.sv"),
-            os.path.join(rtl_dir, "dwn_top_paper_scope.sv"),
-        ],
-        toplevel="dwn_paper_scope_sim_wrapper",
-        module="dwn_pipeline_depth_probe",
-        simulator="verilator",
-        waves=False,
-        build_dir=os.path.join(os.path.dirname(__file__), "sim_build_probe"),
-        python_search_path=[os.path.dirname(__file__)],
-        extra_args=["--Wno-TIMESCALEMOD"],
-        make_args=["CFG_CXXFLAGS_PCH_I=-include"],
-    )
+        simulator.run(
+            verilog_sources=[
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_lut_neuron.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_lut_layer_clocked.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "fixed", "fixed_dwn_groupsum_pipelined.sv"),
+                os.path.join(RTL_COMPONENT_DIR, "dwn_paper_scope_sim_wrapper.sv"),
+                os.path.join(rtl_dir, "dwn_top_clocked.sv"),
+                os.path.join(rtl_dir, "dwn_top_paper_scope.sv"),
+            ],
+            toplevel="dwn_paper_scope_sim_wrapper",
+            module="dwn_pipeline_depth_probe",
+            simulator="verilator",
+            waves=False,
+            build_dir=os.path.join(os.path.dirname(__file__), "sim_build_probe"),
+            python_search_path=[os.path.dirname(__file__)],
+            extra_args=["--Wno-TIMESCALEMOD"],
+            make_args=["CFG_CXXFLAGS_PCH_I=-include"],
+        )
+    finally:
+        if old_val is None:
+            os.environ.pop("DWN_PAPER_SCOPE_UVM_CONFIG", None)
+        else:
+            os.environ["DWN_PAPER_SCOPE_UVM_CONFIG"] = old_val

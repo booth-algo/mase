@@ -21,7 +21,7 @@ from cocotb.clock import Clock
 from cocotb.handle import HierarchyObject
 from cocotb.triggers import ClockCycles, RisingEdge
 
-from fixed_dwn_lut_layer_tb import LUTLayerConfig, LUTLayerSWModel, LUTLayerTx, Scoreboard
+from dwn_lut_layer_common import LUTLayerConfig, LUTLayerSWModel, LUTLayerTx, Scoreboard
 
 
 # Load config from environment variable

@@ -157,8 +157,8 @@ def test_emitted_top_functional_equiv():
                     "args": {"x": "data_in"},
                     "module": "fixed_dwn_lut_layer",
                     "dependence_files": [
-                        "dwn_layers/rtl/fixed_dwn_lut_neuron.sv",
-                        "dwn_layers/rtl/fixed_dwn_lut_layer.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_neuron.sv",
+                        "dwn_layers/rtl/fixed/fixed_dwn_lut_layer.sv",
                     ],
                 }
             },
