@@ -500,7 +500,7 @@ def _load_toyadmos(args):
     except ImportError:
         raise ImportError(
             "torchaudio is required for ToyADMOS: "
-            "conda run -n plena2 pip install torchaudio"
+            "pip install torchaudio"
         )
 
     # DCASE 2020 Task 2 ToyCar dev dataset (1.8 GB)

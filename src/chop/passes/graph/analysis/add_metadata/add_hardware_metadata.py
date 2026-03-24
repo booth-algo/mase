@@ -1,8 +1,6 @@
 import logging
 
-import toml
 import torch
-import torch.fx as fx
 from chop.ir.graph.mase_graph import MaseGraph
 from chop.ir.graph.mase_metadata import MaseMetadata
 from chop.nn.modules import GroupedQueryAttention
@@ -67,7 +65,6 @@ def add_component_source(node):
         if "data_in" in arg:
             continue
         elif node.meta["mase"]["hardware"].get("module") in [
-            "fixed_difflogic_logic",
             "fixed_difflogic_logic",
         ]:
             continue
