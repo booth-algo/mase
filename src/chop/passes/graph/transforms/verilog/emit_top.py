@@ -3,6 +3,7 @@ from typing import Tuple, Dict
 import math
 import os
 import time
+import torch.fx as fx
 from chop.passes.graph.utils import vf, v2p, init_project
 import mase_components.helper.generate_memory as gen_lut
 import torch.nn as nn
