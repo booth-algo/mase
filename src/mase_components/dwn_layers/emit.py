@@ -19,7 +19,7 @@ import torch.nn as nn
 # Path to mase_components RTL source tree (resolved relative to this file)
 # ---------------------------------------------------------------------------
 _MASE_COMPONENTS_RTL = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../src/mase_components")
+    os.path.join(os.path.dirname(__file__), "..")
 )
 
 
@@ -27,10 +27,7 @@ _MASE_COMPONENTS_RTL = os.path.abspath(
 def _load_model_from_checkpoint(ckpt_path, device):
     """Load a .pt checkpoint, reconstruct DWNModel, return (hw_model, cfg, full_model, state_dict)."""
     from chop.nn.dwn import DWNModel
-    try:
-        from dwn.hardware_core import DWNHardwareCore
-    except ImportError:
-        from hardware_core import DWNHardwareCore
+    from mase_components.dwn_layers.hardware_core import DWNHardwareCore
 
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     cfg = ckpt.get("model_config")

@@ -111,7 +111,7 @@ def main():
     print(f"Loading checkpoint: {ckpt_path}")
     print(f"Output directory: {out_dir}")
 
-    from emit import emit_dwn_rtl
+    from mase_components.dwn_layers.emit import emit_dwn_rtl
     result = emit_dwn_rtl(
         ckpt_path=ckpt_path,
         output_dir=out_dir,
