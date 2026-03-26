@@ -24,7 +24,7 @@ sys.path.insert(0, _src)
 #
 # Import-chain workaround
 #
-# The dependency chain  chop → chop.nn.quantized → transformers → torchvision
+# The dependency chain  chop -> chop.nn.quantized -> transformers -> torchvision
 # crashes at runtime because of a torchvision/torch version mismatch
 # (torchvision::nms kernel not registered).  RTL emission needs neither
 # torchvision nor HuggingFace transformers, so we intercept ALL imports of
