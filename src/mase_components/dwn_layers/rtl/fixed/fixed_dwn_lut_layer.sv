@@ -1,5 +1,6 @@
 /* verilator lint_off WIDTHTRUNC */
 /* verilator lint_off WIDTHEXPAND */
+`timescale 1ns/1ps
 module fixed_dwn_lut_layer #(
     parameter INPUT_SIZE  = 8,
     parameter OUTPUT_SIZE = 4,

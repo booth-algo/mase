@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 module fixed_dwn_flatten #(
     parameter IN_COLS = 2,
     parameter IN_ROWS = 2

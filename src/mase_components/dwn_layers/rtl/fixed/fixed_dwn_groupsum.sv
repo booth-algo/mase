@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 module fixed_dwn_groupsum #(
     parameter INPUT_SIZE = 4,
     parameter NUM_GROUPS = 2

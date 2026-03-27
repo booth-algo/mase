@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 module fixed_dwn_thermometer #(
     parameter NUM_FEATURES   = 4,   // F - number of features
     parameter FEATURE_WIDTH  = 8,   // W - bits per feature
