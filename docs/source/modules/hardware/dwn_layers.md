@@ -9,6 +9,8 @@ through the MASE hardware compilation pipeline.
 src/mase_components/dwn_layers/
 ├── passes.py                              # MASE hardware metadata passes
 ├── blif.py                                # BLIF export for ABC minimization
+├── emit.py                                # RTL emission library (callable from scripts/tests)
+├── hardware_core.py                       # DWNHardwareCore wrapper (LUT-only subgraph)
 ├── rtl/
 │   ├── fixed/                             # Behavioral RTL (portable, simulation-friendly)
 │   │   ├── fixed_dwn_lut_neuron.sv        #   Single neuron: LUT_CONTENTS[addr]
@@ -32,30 +34,20 @@ src/mase_components/dwn_layers/
 │   │   ├── fixed_dwn_thermometer_tb.py
 │   │   ├── structural_dwn_lut_neuron_tb.py
 │   │   └── test_rtl_sim.py                #   Pytest runner for all unit tests
-│   └── integration/                       # Full-pipeline verification
-│       ├── dwn_test_utils.py              #   Shared helpers (sw_forward, load_mnist, etc.)
-│       ├── dwn_lut_layer_equiv_tb.py      #   Config-driven LUT layer equivalence
-│       ├── dwn_top_equiv_tb.py            #   Multi-layer network equivalence
-│       ├── dwn_mnist_uvm_tb.py            #   UVM-style MNIST scoreboard (combinational)
-│       ├── dwn_paper_scope_uvm_tb.py      #   UVM-style MNIST scoreboard (clocked pipeline)
-│       ├── dwn_paper_scope_sim_wrapper.sv  #   Clocked wrapper for paper-scope pipeline
-│       ├── dwn_pipeline_depth_probe.py    #   Pipeline latency characterization
-│       ├── test_dwn_mnist_fullsim.py      #   Pytest: emit + simulate MNIST (combinational)
-│       ├── test_dwn_paper_scope_fullsim.py#   Pytest: emit + simulate MNIST (clocked)
-│       ├── test_dwn_pipeline_depth_probe.py
-│       └── test_rtl_equiv_from_model.py   #   Pytest: single-layer model→RTL equivalence
+│   └── integration/                       # End-to-end RTL verification
+│       ├── run_top_tb.py                  #   Runner: emits RTL, builds sim, launches cocotb
+│       └── top_tb.py                      #   cocotb testbench: AXI-Stream stimulus + scoring
 
 scripts/
 ├── dwn/
-│   ├── run_ckpt_to_rtl.py                 # Checkpoint → RTL via MASE pipeline
-│   └── hardware_core.py                   # Shared DWNHardwareCore wrapper class
-├── emit_dwn_rtl.py                        # Checkpoint → RTL (standalone, with BLIF option)
-├── emit_full_pipeline_rtl.py              # Full pipeline wrapper (thermo + LUT + groupsum)
+│   └── run_ckpt_to_rtl.py                 # Checkpoint → RTL via MASE pipeline
+├── emit_dwn_rtl.py                        # Checkpoint → RTL (standalone, with BLIF/pipeline options)
 └── synth_dwn.tcl                          # Vivado synthesis TCL script
 
 test/passes/graph/transforms/dwn/
 ├── test_dwn_emit_rtl_equiv.py             # Parametrized emit pipeline equivalence
-└── test_emit_verilog_dwn.py               # Verilog syntax/parameter validation
+├── test_emit_verilog_dwn.py               # Verilog syntax/parameter validation
+└── test_dwn_modules.py                    # Unit tests for DWN PyTorch modules
 ```
 
 ## Fixed vs Structural RTL
@@ -122,15 +114,11 @@ python scripts/dwn/run_ckpt_to_rtl.py --ckpt mase_output/dwn/best.pt --top-name 
 ```
 
 ### `scripts/emit_dwn_rtl.py`
-Standalone RTL emission with optional BLIF export and pipelined variant.
+Standalone RTL emission with optional BLIF export, pipelined variant, and full-pipeline
+wrappers (thermometer + LUT + groupsum). Delegates to `mase_components.dwn_layers.emit`.
 ```bash
 python scripts/emit_dwn_rtl.py --ckpt-name mnist_n2 --output-dir hw/mnist_n2
-```
-
-### `scripts/emit_full_pipeline_rtl.py`
-Generate full-pipeline wrappers (thermometer + LUT stack + groupsum).
-```bash
-python scripts/emit_full_pipeline_rtl.py --ckpt-name baseline_n6
+python scripts/emit_dwn_rtl.py --ckpt-name baseline_n6 --full-pipeline --pipelined
 ```
 
 ### `scripts/synth_dwn.tcl`
@@ -162,24 +150,35 @@ Prerequisites: `cocotb`, `cocotb-test`, Verilator, PyTorch.
 
 ### Integration Tests
 
-| Test | What it does | Prerequisites |
-|------|-------------|---------------|
-| `test_dwn_mnist_fullsim.py` | Emits RTL from checkpoint, simulates 500 MNIST samples through combinational `dwn_top`, compares bit-for-bit vs SW model | Trained checkpoint, MNIST cache |
-| `test_dwn_paper_scope_fullsim.py` | Same but through clocked 4-stage pipeline (`dwn_top_paper_scope`), compares class scores | Trained checkpoint, MNIST cache |
-| `test_dwn_pipeline_depth_probe.py` | Characterizes pipeline latency (tries delays 1-8, asserts correct depth found) | Trained checkpoint, MNIST cache |
-| `test_rtl_equiv_from_model.py` | Creates a small LUTLayer, packs weights, simulates in RTL, compares exhaustively | cocotb, Verilator |
+The integration testbench is split into two files:
 
-Run individually:
+- **`run_top_tb.py`** — Runner script. Loads the checkpoint, emits RTL via `emit_dwn_rtl()`,
+  builds the Verilator simulation, and launches cocotb with the correct environment.
+  Supports `--full` (include thermometer + groupsum), `--pipelined` (clocked variant),
+  and `--no-emit` (reuse previously generated RTL).
+- **`top_tb.py`** — cocotb testbench. Uses AXI-Stream source/sink to drive data through
+  the DUT and compare RTL outputs bit-for-bit against the PyTorch software model.
+  Runs four tests: `reset_test`, `backpressure_test`, `basic_test`, and
+  `continuous_test` (100 samples, with and without random backpressure).
+
+Run from the integration directory:
 ```bash
-cd src/mase_components/dwn_layers/test
-python -m pytest integration/test_dwn_mnist_fullsim.py -v -s
+cd src/mase_components/dwn_layers/test/integration
+
+# Core-only (LUT layers), combinational
+python run_top_tb.py --model <checkpoint_name>
+
+# Full pipeline (thermometer + LUT + groupsum), pipelined
+python run_top_tb.py --model <checkpoint_name> --full --pipelined
+
+# Skip RTL emission (reuse previously generated RTL)
+python run_top_tb.py --model <checkpoint_name> --full --pipelined --no-emit
 ```
 
-Environment variables for integration tests:
-- `DWN_CKPT` — path to trained `.pt` checkpoint
-- `DWN_RTL_DIR` — path to emitted RTL directory
-- `DWN_MNIST_CACHE` — path to MNIST feature cache (default: `~/.cache/dwn/mnist/mnist_features.pt`)
-- `DWN_UVM_NUM_SAMPLES` — number of MNIST samples to simulate
+Environment variables:
+- `SIM` — simulator to use (default: `verilator`)
+- `MODEL_PATH` — set automatically by `run_top_tb.py`; path to the `.pt` checkpoint
+- `MODEL_MODE` — set automatically; `core` (LUT-only) or `full` (with thermometer + groupsum)
 
 ### Pass-Level Tests
 
@@ -191,3 +190,4 @@ python -m pytest test/passes/graph/transforms/dwn/ -v -s
 |------|-------------|
 | `test_dwn_emit_rtl_equiv.py` | Parametrized: builds 1-layer and 2-layer models, runs full emit pipeline, simulates RTL, compares vs `sw_forward()` golden model |
 | `test_emit_verilog_dwn.py` | Builds model, runs emit pipeline, validates generated Verilog syntax (lowercase names, unquoted hex params) |
+| `test_dwn_modules.py` | Unit tests for DWN PyTorch modules (DistributiveThermometer, LUTLayer, GroupSum, DWNModel). CUDA tests are skipped when no GPU is available |
