@@ -686,10 +686,12 @@ module full_pipeline_top_clocked (
 
     wire [{score_width}:0] gs_comb [0:{num_classes - 1}];
 
-    fixed_dwn_groupsum #(
+    fixed_dwn_groupsum_pipelined #(
         .INPUT_SIZE ({lut_output}),
         .NUM_GROUPS ({num_classes})
     ) gs_inst (
+        .clk              (clk),
+        .rst              (rst),
         .data_in_0        (lut_out),
         .data_in_0_valid  (lut_valid),
         .data_in_0_ready  (lut_ready),

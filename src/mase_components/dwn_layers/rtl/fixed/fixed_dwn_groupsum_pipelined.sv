@@ -38,6 +38,7 @@ module fixed_dwn_groupsum_pipelined #(
     logic [SUB_COUNT_WIDTH-1:0] partial_comb [0:NUM_GROUPS-1][0:NUM_SUB_GROUPS-1];
     logic [SUB_COUNT_WIDTH-1:0] partial_reg  [0:NUM_GROUPS-1][0:NUM_SUB_GROUPS-1];
     logic                       valid_s1;
+    logic                       ready_s1;
 
     genvar g, s;
     generate
@@ -68,14 +69,17 @@ module fixed_dwn_groupsum_pipelined #(
             for (int gi = 0; gi < NUM_GROUPS; gi = gi + 1)
                 for (int si = 0; si < NUM_SUB_GROUPS; si = si + 1)
                     partial_reg[gi][si] <= '0;
-        end else begin
+        end else if (data_in_0_ready) begin
+            if (data_in_0_valid) begin
+                for (int gi = 0; gi < NUM_GROUPS; gi = gi + 1)
+                    for (int si = 0; si < NUM_SUB_GROUPS; si = si + 1)
+                        partial_reg[gi][si] <= partial_comb[gi][si];
+            end
             valid_s1 <= data_in_0_valid;
-            for (int gi = 0; gi < NUM_GROUPS; gi = gi + 1)
-                for (int si = 0; si < NUM_SUB_GROUPS; si = si + 1)
-                    partial_reg[gi][si] <= partial_comb[gi][si];
         end
     end
 
+    assign data_in_0_ready = !valid_s1 || ready_s1;
     // ----------------------------------------------------------------
     // Stage 2: sum partial counts per group (combinational) -> registered
     // ----------------------------------------------------------------
@@ -95,14 +99,15 @@ module fixed_dwn_groupsum_pipelined #(
             data_out_0_valid <= 1'b0;
             for (int gi = 0; gi < NUM_GROUPS; gi = gi + 1)
                 data_out_0[gi] <= '0;
-        end else begin
+        end else if (ready_s1) begin
+            if (valid_s1) begin
+                for (int gi = 0; gi < NUM_GROUPS; gi = gi + 1)
+                    data_out_0[gi] <= sum_comb[gi][$clog2(INPUT_SIZE/NUM_GROUPS):0];
+            end
             data_out_0_valid <= valid_s1;
-            for (int gi = 0; gi < NUM_GROUPS; gi = gi + 1)
-                data_out_0[gi] <= sum_comb[gi][$clog2(INPUT_SIZE/NUM_GROUPS):0];
         end
     end
 
-    // Simple pass-through ready (no backpressure buffer)
-    assign data_in_0_ready = data_out_0_ready;
+    assign ready_s1 = !data_out_0_valid || data_out_0_ready;
 
 endmodule
