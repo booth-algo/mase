@@ -3,15 +3,28 @@ from cocotb.runner import get_runner
 from chop.nn.dwn.model import DWNModel
 from pathlib import Path
 import os
+import sysconfig
 import shutil
 import argparse
 from mase_components.dwn_layers.emit import emit_dwn_rtl
 
 import torch
 
+# TODO: maybe move the generated RTL to mase_output ?
 rtl_dir = Path(__file__).parent / 'gen_rtl'
 rtl_path = rtl_dir / 'hardware/rtl'
 model_dir = Path('mase_output/dwn/').resolve()
+
+# Forward parent environment to allow cuda extension compilation
+def forward_env():
+    python_include_path = sysconfig.get_path('include') or ''
+    env = {
+        'CPATH': os.pathsep.join(part for part in (python_include_path, os.environ.get('CPATH')) if part),
+        'C_INCLUDE_PATH': os.pathsep.join(part for part in (python_include_path, os.environ.get('C_INCLUDE_PATH')) if part),
+        'CPLUS_INCLUDE_PATH': os.pathsep.join(part for part in (python_include_path, os.environ.get('CPLUS_INCLUDE_PATH')) if part),
+    }
+    env.update({key: value for key in ('CUDA_HOME', 'TORCH_CUDA_ARCH_LIST', 'TORCH_EXTENSIONS_DIR') if (value := os.environ.get(key))})
+    return env
 
 def top_tb_runner(model_name, full, no_emit):
     model_path = model_dir / f"{model_name}.pt"
@@ -51,7 +64,7 @@ def top_tb_runner(model_name, full, no_emit):
         test_module='top_tb',
         hdl_toplevel='full_pipeline_top' if full else 'dwn_top',
         waves=True,
-        extra_env={'MODEL_PATH': str(model_path), 'MODEL_MODE': 'full' if full else 'core'}
+        extra_env={'MODEL_PATH': str(model_path), 'MODEL_MODE': 'full' if full else 'core'} | forward_env()
     )
 
 if __name__ == "__main__":

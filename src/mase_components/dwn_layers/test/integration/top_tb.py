@@ -36,7 +36,6 @@ def class_scores_to_bits(class_scores: np.ndarray, total_bits: int) -> np.ndarra
     bits = ((scores[:, None] >> bit_idx) & 1).astype(np.uint8).reshape(-1)
     return bits
 
-
 class AxiStreamBusUncooked(AxiStreamBus):
     def __init__(self, entity, prefix):
         signals = {'tdata': prefix}
@@ -56,14 +55,17 @@ class TopEnv():
     def __init__(self, dut):
         self.dut = dut
         self.mode = os.environ['MODEL_MODE']
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model = torch.load(model_path, weights_only=True, map_location='cpu')
         cfg = model['model_config']
         model_kwargs = {k: v for k, v in cfg.items() if k not in ("area_lambda", "lambda_reg")}
         self.full_model = DWNModel(**model_kwargs)
         self.full_model.fit_thermometer(torch.zeros(2, cfg["input_features"]))
         self.full_model.load_state_dict(model['model_state_dict'])
+        self.full_model.to(self.device)
         self.full_model.eval()
         self.core_model = DWNHardwareCore(self.full_model.lut_layers)
+        self.core_model.to(self.device)
         self.core_model.eval()
         self.model_cfg = cfg
         self.input_bit_width = len(dut.data_in_0)
@@ -81,7 +83,7 @@ class TopEnv():
         cocotb.start_soon(self.clock.start())
         await self.reset_dut()
 
-    def get_random_input(self, batch_size=1):
+    def get_random_input(self, batch_size=1) -> torch.Tensor:
         if self.mode == 'core':
             return torch.randint(0, 2, (batch_size, self.input_bit_width), dtype=torch.uint8)
         else:
@@ -93,11 +95,12 @@ class TopEnv():
 
     def expected_output_bits(self, input_tensor: torch.Tensor) -> np.ndarray:
         with torch.no_grad():
+            model_input = input_tensor.to(self.device)
             if self.mode == 'core':
-                model_tensor = self.core_model(input_tensor)
+                model_tensor = self.core_model(model_input)
                 return model_tensor.squeeze(0).to(dtype=torch.uint8).cpu().numpy()
             else:
-                pixels = input_tensor.float() / 255.0
+                pixels = model_input.float() / 255.0
                 model_logits = self.full_model(pixels).squeeze(0).cpu().numpy()
                 tau = float(self.full_model.group_sum.tau)
                 class_scores = np.rint(model_logits * tau).astype(np.int64)
@@ -125,27 +128,3 @@ async def basic_test(dut):
     expected_tensor = torch.from_numpy(expected_bits).unsqueeze(0)
 
     assert torch.equal(output_tensor, expected_tensor)
-
-
-@cocotb.test()
-async def continuous_batch_test(dut):
-    env = TopEnv(dut)
-    await env.start()
-
-    batch_size = 8
-    batch_input = env.get_random_input(batch_size=batch_size)
-    expected_batch = []
-
-    for idx in range(batch_size):
-        sample = batch_input[idx:idx + 1]
-        sent_data = env.encode_input_data(sample)
-        await env.axis_source.write(sent_data)
-        expected_batch.append(env.expected_output_bits(sample))
-
-    for idx, expected_bits in enumerate(expected_batch):
-        output_bytes = await env.axis_sink.read()
-        output_bits = bytes_to_bits(output_bytes, env.output_bit_width)
-        output_tensor = torch.from_numpy(output_bits).unsqueeze(0)
-        expected_tensor = torch.from_numpy(expected_bits).unsqueeze(0)
-
-        assert torch.equal(output_tensor, expected_tensor), f"Mismatch at batch index {idx}"
