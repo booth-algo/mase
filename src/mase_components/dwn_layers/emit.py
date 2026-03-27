@@ -663,7 +663,7 @@ module full_pipeline_top_clocked (
     dwn_top_clocked lut_inst (
         .clk              (clk),
         .rst              (rst),
-        .data_in_0        (thermo_reg),
+        .data_in_0        (thermo_comb),
         .data_in_0_valid  (1'b1),
         .data_in_0_ready  (),
         .data_out_0       (lut_out),
