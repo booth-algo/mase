@@ -15,14 +15,10 @@ import shutil
 import torch
 import torch.nn as nn
 
-
-# ---------------------------------------------------------------------------
 # Path to mase_components RTL source tree (resolved relative to this file)
-# ---------------------------------------------------------------------------
 _MASE_COMPONENTS_RTL = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
 )
-
 
 
 def _load_model_from_checkpoint(ckpt_path, device):
@@ -124,7 +120,6 @@ def _emit_pipelined_variant(rtl_dir, top_name):
     shutil.copy(clocked_layer_src, os.path.join(rtl_dir, "fixed_dwn_lut_layer_clocked.sv"))
 
     return clocked_top_path
-
 
 
 def _emit_lut_layer_rom(rtl_dir, layer_idx, lut_layer):
@@ -399,9 +394,7 @@ module full_pipeline_top (
     input  wire                              rst
 );
 
-    // ----------------------------------------------------------------
     // Stage 1: Thermometer encoding
-    // ----------------------------------------------------------------
     wire  [{thermo_bits - 1}:0] thermo_out;
     logic                       thermo_valid;
     logic                       thermo_ready;
@@ -419,9 +412,7 @@ module full_pipeline_top (
         .data_out_0_ready (thermo_ready)
     );
 
-    // ----------------------------------------------------------------
     // Stage 2: LUT layer stack (generated dwn_top)
-    // ----------------------------------------------------------------
     wire  [{lut_output - 1}:0] lut_out;
     logic                      lut_valid;
     logic                      lut_ready;
@@ -437,9 +428,7 @@ module full_pipeline_top (
         .data_out_0_ready (lut_ready)
     );
 
-    // ----------------------------------------------------------------
     // Stage 3: GroupSum output aggregation
-    // ----------------------------------------------------------------
     logic [$clog2({lut_output}/{num_classes}):0] groupsum_packed [0:{num_classes - 1}];
 
     fixed_dwn_groupsum #(
@@ -488,9 +477,8 @@ module full_pipeline_top_clocked (
     output logic [{score_width}:0]    data_out_0 [0:{num_classes - 1}]
 );
 
-    // ----------------------------------------------------------------
     // Stage 1: Thermometer encoding (combinational)
-    // ----------------------------------------------------------------
+
     wire [{thermo_bits - 1}:0] thermo_comb;
 
     fixed_dwn_thermometer #(
@@ -506,18 +494,16 @@ module full_pipeline_top_clocked (
         .data_out_0_ready (1'b1)
     );
 
-    // ----------------------------------------------------------------
     // Stage 2: Register thermometer output (FF boundary)
-    // ----------------------------------------------------------------
+
     logic [{thermo_bits - 1}:0] thermo_reg;
     always_ff @(posedge clk) begin
         if (rst) thermo_reg <= '0;
         else     thermo_reg <= thermo_comb;
     end
 
-    // ----------------------------------------------------------------
     // Stage 3: LUT layer stack - clocked variant (FFs between layers)
-    // ----------------------------------------------------------------
+
     wire [{lut_output - 1}:0] lut_out;
 
     dwn_top_clocked lut_inst (
@@ -531,9 +517,8 @@ module full_pipeline_top_clocked (
         .data_out_0_ready (1'b1)
     );
 
-    // ----------------------------------------------------------------
     // Stage 4: GroupSum (combinational)
-    // ----------------------------------------------------------------
+
     wire [{score_width}:0] gs_comb [0:{num_classes - 1}];
 
     fixed_dwn_groupsum #(
@@ -548,9 +533,8 @@ module full_pipeline_top_clocked (
         .data_out_0_ready (1'b1)
     );
 
-    // ----------------------------------------------------------------
     // Stage 5: Register outputs (FF boundary)
-    // ----------------------------------------------------------------
+
     always_ff @(posedge clk) begin
         if (rst) begin
             for (int i = 0; i < {num_classes}; i++) data_out_0[i] <= '0;
@@ -635,7 +619,7 @@ def _emit_full_pipeline(rtl_dir, cfg, state_dict, feature_width):
     # Generate ROM-based thermometer (replaces parameter-based version)
     _emit_thermometer_rom(rtl_dir, thresholds_int, num_features, num_bits, feature_width)
 
-    # Copy component RTL files (thermometer already generated above)
+    # Copy component RTL files
     component_src = os.path.join(_MASE_COMPONENTS_RTL, "dwn_layers/rtl/fixed")
     for fname in [
         "fixed_dwn_groupsum.sv",
@@ -697,7 +681,7 @@ def emit_dwn_rtl(
     -------
     dict with keys: output_dir, rtl_dir, sv_files, graph.
     """
-    # --- input validation ---
+    # Input validation
     if ckpt_path is not None and model is not None:
         raise ValueError("Provide ckpt_path OR model, not both")
     if ckpt_path is None and model is None:
@@ -705,13 +689,13 @@ def emit_dwn_rtl(
     if model is not None and model_config is None:
         raise ValueError("model_config is required when providing model directly")
 
-    # --- resolve device ---
+    # Resolve device
     if device == "auto":
         dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         dev = torch.device(device)
 
-    # --- get hw_model, config, and optionally full_model + state_dict ---
+    # Load or use provided model
     full_model = None
     state_dict = None
 
@@ -722,38 +706,36 @@ def emit_dwn_rtl(
         hw_model.eval()
         cfg = model_config
 
-    # --- compute dummy input shape ---
+    # Compute dummy input shape
     thermo_width = cfg.get("thermo_width") or cfg["input_features"] * cfg["num_bits"]
     dummy_input = torch.zeros(1, thermo_width).to(dev)
 
-    # --- run MASE emit pipeline ---
+    # Run MASE emit pipeline
     graph, rtl_dir = _run_mase_emit_pipeline(hw_model, dummy_input, output_dir, top_name)
 
-    # --- replace oversized parameter literals with ROM-based modules ---
+    # Replace oversized parameter literals with ROM-based modules
     for i, layer in enumerate(hw_model.lut_layers):
         _emit_lut_layer_rom(rtl_dir, i, layer)
     _regenerate_dwn_top_rom(rtl_dir, hw_model, top_name)
-    # Remove the original parameterized layer file (ROM replacements are used instead)
     old_layer = os.path.join(rtl_dir, "fixed_dwn_lut_layer.sv")
     if os.path.exists(old_layer):
         os.remove(old_layer)
 
-    # --- optional: pipelined variant ---
+    # Pipelined variant
     if emit_pipelined:
         _emit_pipelined_variant(rtl_dir, top_name)
 
-    # --- optional: full pipeline wrappers ---
+    # Full pipeline wrappers
     if full_pipeline:
         if ckpt_path is None and state_dict is None:
             raise ValueError(
                 "full_pipeline=True requires ckpt_path (needs checkpoint state_dict for thresholds)"
             )
-        # full_pipeline implies pipelined (needs dwn_top_clocked.sv)
         if not emit_pipelined:
             _emit_pipelined_variant(rtl_dir, top_name)
         _emit_full_pipeline(rtl_dir, cfg, state_dict, feature_width)
 
-    # --- optional: BLIF ---
+    # BLIF export
     if emit_blif:
         if full_model is None:
             raise ValueError("emit_blif requires ckpt_path (needs full DWNModel)")
@@ -761,7 +743,7 @@ def emit_dwn_rtl(
         blif_path = os.path.join(output_dir, "network.blif")
         emit_network_blif(full_model, blif_path)
 
-    # --- collect results ---
+    # Collect results
     sv_files = sorted(f for f in os.listdir(rtl_dir) if f.endswith(".sv"))
 
     return {
