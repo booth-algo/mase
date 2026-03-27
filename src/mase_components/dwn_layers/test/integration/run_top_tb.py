@@ -41,7 +41,8 @@ def top_tb_runner(model_name, full, no_emit):
         os.mkdir(rtl_dir)
         emit_dwn_rtl(ckpt_path=model_path, output_dir=rtl_dir, full_pipeline=True)
     runner.build(
-        hdl_toplevel='full_pipeline_top' if full else 'dwn_top',
+        # hdl_toplevel='full_pipeline_top' if full else 'dwn_top',
+        hdl_toplevel = 'full_pipeline_top_clocked',
         # TODO: Switch back to this one RTL generation is finalized
         # verilog_sources=[
         #     rtl_path /'dwn_top.sv',
@@ -62,7 +63,8 @@ def top_tb_runner(model_name, full, no_emit):
     
     runner.test(
         test_module='top_tb',
-        hdl_toplevel='full_pipeline_top' if full else 'dwn_top',
+        # hdl_toplevel='full_pipeline_top' if full else 'dwn_top',
+        hdl_toplevel = 'full_pipeline_top_clocked',
         waves=True,
         extra_env={'MODEL_PATH': str(model_path), 'MODEL_MODE': 'full' if full else 'core'} | forward_env()
     )
