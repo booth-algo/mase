@@ -655,15 +655,8 @@ module full_pipeline_top_clocked (
         .data_out_0_ready (1'b1)
     );
 
-    // Stage 2: Register thermometer output (FF boundary)
 
-    logic [{thermo_bits - 1}:0] thermo_reg;
-    always_ff @(posedge clk) begin
-        if (rst) thermo_reg <= '0;
-        else     thermo_reg <= thermo_comb;
-    end
-
-    // Stage 3: LUT layer stack - clocked variant (FFs between layers)
+    // Stage 2: LUT layer stack - clocked variant (FFs between layers)
 
     wire [{lut_output - 1}:0] lut_out;
 
