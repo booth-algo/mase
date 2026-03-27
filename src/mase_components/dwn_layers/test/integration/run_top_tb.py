@@ -46,20 +46,6 @@ def top_tb_runner(model_name, full, pipelined, no_emit):
         hdl_toplevel = 'dwn_top_clocked' if pipelined else 'dwn_top'
     runner.build(
         hdl_toplevel = hdl_toplevel,
-        # TODO: Switch back to this one RTL generation is finalized
-        # verilog_sources=[
-        #     rtl_path /'dwn_top.sv',
-        #     # rtl_path /'dwn_top_clocked.sv',
-        #     # rtl_path /'dwn_top_paper_scope.sv',
-        #     rtl_path /'fixed_dwn_groupsum.sv',
-        #     # rtl_path /'fixed_dwn_groupsum_pipelined.sv',
-        #     rtl_path /'fixed_dwn_lut_layer.sv',
-        #     # rtl_path /'fixed_dwn_lut_layer_clocked.sv',
-        #     rtl_path /'fixed_dwn_lut_neuron.sv',
-        #     rtl_path /'fixed_dwn_thermometer.sv',
-        #     rtl_path /'full_pipeline_top.sv',
-        #     # rtl_path /'full_pipeline_top_clocked.sv',
-        # ],
         verilog_sources=list((rtl_path).glob('*.sv')),
         waves=True
     )
