@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 module fixed_dwn_lut_neuron #(
     parameter LUT_N                         = 6,
     parameter [(2**LUT_N)-1:0] LUT_CONTENTS = {(2**LUT_N){1'b0}}

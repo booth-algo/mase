@@ -1,6 +1,7 @@
 // Pipelined GroupSum: 2-stage popcount replaces combinational $countones.
 // Stage 1: split each group into ~10-bit sub-groups, popcount each, register.
 // Stage 2: sum partial counts per group, register final output.
+`timescale 1ns/1ps
 module fixed_dwn_groupsum_pipelined #(
     parameter INPUT_SIZE     = 4,
     parameter NUM_GROUPS     = 2,
