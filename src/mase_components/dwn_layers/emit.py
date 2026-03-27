@@ -133,7 +133,7 @@ def _pack_thresholds_sv(thresholds_int, num_features, num_thresholds, feature_wi
     for f in range(num_features):
         for t in range(num_thresholds):
             thresh = int(thresholds_int[f][t]) & ((1 << feature_width) - 1)
-            value = (value << feature_width) | thresh
+            value |= thresh << ((f * num_thresholds + t) * feature_width)
     hex_digits = (total_bits + 3) // 4
     return f"{total_bits}'h{value:0{hex_digits}X}"
 
@@ -158,7 +158,7 @@ module full_pipeline_top (
     input  logic                             data_in_0_valid,
     output logic                             data_in_0_ready,
 
-    output logic [$clog2({lut_output}/{num_classes}):0] data_out_0 [0:{num_classes - 1}],
+    output logic [({num_classes}*($clog2({lut_output}/{num_classes})+1))-1:0] data_out_0,
     output logic                             data_out_0_valid,
     input  logic                             data_out_0_ready,
 
@@ -208,6 +208,8 @@ module full_pipeline_top (
     // ----------------------------------------------------------------
     // Stage 3: GroupSum output aggregation
     // ----------------------------------------------------------------
+    logic [$clog2({lut_output}/{num_classes}):0] groupsum_packed [0:{num_classes - 1}];
+
     fixed_dwn_groupsum #(
         .INPUT_SIZE ({lut_output}),
         .NUM_GROUPS ({num_classes})
@@ -215,10 +217,12 @@ module full_pipeline_top (
         .data_in_0        (lut_out),
         .data_in_0_valid  (lut_valid),
         .data_in_0_ready  (lut_ready),
-        .data_out_0       (data_out_0),
+        .data_out_0       (groupsum_packed),
         .data_out_0_valid (data_out_0_valid),
         .data_out_0_ready (data_out_0_ready)
     );
+
+    assign data_out_0 = {{{','.join(f' groupsum_packed[{i}]' for i in range(num_classes))}}};
 
 endmodule
 """
