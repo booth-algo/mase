@@ -16,7 +16,7 @@ EFD training has no CPU fallback and will skip automatically when no GPU is dete
 
 Simulation prerequisites (unit and integration tests only):
 - [Verilator](https://verilator.org) ≥ 5.0
-- `cocotb` and `cocotb-test` (included via `uv sync`)
+- `cocotb`, `cocotb-test`, `cocotbext-axi` (included via `uv sync`)
 
 ## Quick Start
 
@@ -133,20 +133,6 @@ giving precise area counts. The fixed variant lets the synthesizer optimize free
 | `structural_dwn_lut_layer` | Structural, comb | 0 | Parallel LUT6 neurons |
 | `structural_dwn_lut_layer_clocked` | Structural, 1-clk | 1 | Output-registered LUT6 layer |
 | `sim_lut6` | Sim stub | 0 | Verilator-compatible LUT6 model |
-
-## Parameter Packing
-
-Trained LUT weights are packed into Verilog parameters as hex literals:
-
-- **INPUT_INDICES**: `(i*LUT_N + k) * INDEX_BITS` bits per entry, where `INDEX_BITS = ceil(log2(INPUT_SIZE))`
-- **LUT_CONTENTS**: `i * 2^LUT_N` bits per neuron truth table
-
-Example for INPUT_SIZE=4, OUTPUT_SIZE=2, LUT_N=2:
-```
-INDEX_BITS = 2
-INPUT_INDICES = 8'hE4   // neuron0 reads [0,1], neuron1 reads [2,3]
-LUT_CONTENTS  = 8'hAC   // neuron0 truth table = 4'b1100, neuron1 = 4'b1010
-```
 
 ## Full Inference Pipeline
 
