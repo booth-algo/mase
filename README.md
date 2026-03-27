@@ -1,82 +1,272 @@
-# Machine-Learning Accelerator System Exploration Tools
+# DWN Hardware Implementation
 
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![Doc][doc-shield]][doc-url]
+Differentiable Weightless Neural Networks (DWN) mapped to synthesizable RTL
+through the MASE hardware compilation pipeline.
 
-[contributors-shield]: https://img.shields.io/github/contributors/DeepWok/mase.svg?style=flat
-[contributors-url]: https://github.com/DeepWok/mase/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/DeepWok/mase.svg?style=flat
-[forks-url]: https://github.com/DeepWok/mase/network/members
-[stars-shield]: https://img.shields.io/github/stars/DeepWok/mase.svg?style=flat
-[stars-url]: https://github.com/DeepWok/mase/stargazers
-[issues-shield]: https://img.shields.io/github/issues/DeepWok/mase.svg?style=flat
-[issues-url]: https://github.com/DeepWok/mase/issues
-[license-shield]: https://img.shields.io/github/license/DeepWok/mase.svg?style=flat
-[license-url]: https://github.com/DeepWok/mase/blob/master/LICENSE.txt
-[issues-shield]: https://img.shields.io/github/issues/DeepWok/mase.svg?style=flat
-[issues-url]: https://github.com/DeepWok/mase/issues
-[doc-shield]: https://readthedocs.org/projects/pytorch-geometric/badge/?version=latest
-[doc-url]: https://deepwok.github.io/mase/
+## Setup
 
-## Overview
+From the repository root, install all dependencies with [uv](https://docs.astral.sh/uv/):
 
-Mase is a Machine Learning compiler based on PyTorch FX, maintained by researchers at Imperial College London. We provide a set of tools for inference and training optimization of state-of-the-art language and vision models. The following features are supported, among others:
+```bash
+uv sync
+```
 
-- Efficient AI Optimization: 
-  MASE provides a set of composable tools for optimizing AI models. The tools are designed to be modular and can be used in a variety of ways to optimize models for different hardware targets. The tools can be used to optimize models for inference, training, or both. We support features such as the following:
+For GPU-accelerated training (recommended), ensure a CUDA-capable GPU is available.
+EFD training has no CPU fallback and will skip automatically when no GPU is detected.
 
-  - Quantization Search: mixed-precision quantization of any PyTorch model. We support microscaling and other numerical formats, at various granularities.
-  - Quantization-Aware Training (QAT): finetuning quantized models to minimize accuracy loss.
-  - And more!
+Simulation prerequisites (unit and integration tests only):
+- [Verilator](https://verilator.org) ≥ 5.0
+- `cocotb` and `cocotb-test` (included via `uv sync`)
 
-- Hardware Generation: automatic generation of high-performance FPGA accelerators for arbitrary Pytorch models, through the Emit Verilog flow.
+## Quick Start
 
-- Distributed Deployment (Beta): Automatic parallelization of models across distributed GPU clusters, based on the Alpa algorithm.
+### 1. Train a model
 
-For more details, refer to the Tutorials. If you enjoy using the framework, you can support us by starring the repository on GitHub!
+From the repository root:
 
+```bash
+uv run python scripts/dwn/run_dwn_training.py \
+    --dataset mnist \
+    --epochs 30 \
+    --lut-n 6 \
+    --hidden-sizes 2000 1000 \
+    --num-bits 3 \
+    --batch-size 32 \
+    --mapping-first learnable \
+    --lr 0.01 \
+    --lr-step 14
+```
 
-## MASE Publications
+This targets ~98.3% accuracy on MNIST (Bacellar et al., ICML 2024 reference config).
+The best checkpoint is saved to `mase_output/dwn/best.pt`.
 
-* Fast Prototyping Next-Generation Accelerators for New ML Models using MASE: ML Accelerator System Exploration, [link](https://arxiv.org/abs/2307.15517)
-  ```
-  @article{cheng2023fast,
-  title={Fast prototyping next-generation accelerators for new ml models using mase: Ml accelerator system exploration},
-  author={Cheng, Jianyi and Zhang, Cheng and Yu, Zhewen and Montgomerie-Corcoran, Alex and Xiao, Can and Bouganis, Christos-Savvas and Zhao, Yiren},
-  journal={arXiv preprint arXiv:2307.15517},
-  year={2023}}
-  ```
-* MASE: An Efficient Representation for Software-Defined ML Hardware System Exploration, [link](https://openreview.net/forum?id=Z7v6mxNVdU)
-  ```
-  @article{zhangmase,
-  title={MASE: An Efficient Representation for Software-Defined ML Hardware System Exploration},
-  author={Zhang, Cheng and Cheng, Jianyi and Yu, Zhewen and Zhao, Yiren}}
-  ```
-### Repository structure
+### 2. Run the integration test
 
-This repo contains the following directories:
-* `src/chop` - MASE's software stack
-* `src/mase_components` - Internal hardware library
-* `src/mase_cocotb` - Internal hardware testing flow
-* `src/mase_hls` - HLS component of MASE
-* `scripts` - Run and test scripts  
-* `test` - Unit testing 
-* `docs` - Documentation
-* `mlir-air` - MLIR AIR for ACAP devices
-* `setup.py` - Installation entry point
-* `Docker` - Docker container configurations
+```bash
+cd src/mase_components/dwn_layers/test/integration
 
-## MASE Dev Meetings
+# LUT-layer core only (combinational)
+python run_top_tb.py --model best
 
-* Direct [Google Meet link](meet.google.com/fke-zvii-tgv)
-* Join the [Mase Slack](https://join.slack.com/t/mase-tools/shared_invite/zt-2gl60pvur-pktLLLAsYEJTxvYFgffCog)
-* If you want to discuss anything in future meetings, please add them as comments in the [meeting agenda](https://docs.google.com/document/d/12m96h7gOhhmikniXIu44FJ0sZ2mSxg9SqyX-Uu3s-tc/edit?usp=sharing) so we can review and add them.
+# Full pipeline (thermometer + LUT stack + groupsum), pipelined/registered
+python run_top_tb.py --model best --full --pipelined
+```
 
-## Donation  
+The runner emits RTL from the checkpoint, builds a Verilator simulation, then runs
+the cocotb testbench comparing RTL outputs bit-for-bit against the PyTorch model
+across 100 samples with and without backpressure.
 
-If you think MASE is helpful, please [donate](https://www.buymeacoffee.com/mase_tools) for our work, we appreciate your support!
+## File Tree
 
-<img src='./docs/imgs/bmc_qr.png' width='250'>
+```
+src/mase_components/dwn_layers/
+├── passes.py                              # MASE hardware metadata passes
+├── blif.py                                # BLIF export for ABC minimization
+├── emit.py                                # RTL emission library (callable from scripts/tests)
+├── hardware_core.py                       # DWNHardwareCore wrapper (LUT-only subgraph)
+├── rtl/
+│   ├── fixed/                             # Behavioral RTL (portable, simulation-friendly)
+│   │   ├── fixed_dwn_lut_neuron.sv        #   Single neuron: LUT_CONTENTS[addr]
+│   │   ├── fixed_dwn_lut_layer.sv         #   Parallel neurons, combinational
+│   │   ├── fixed_dwn_lut_layer_clocked.sv #   Same + output register (1-cycle latency)
+│   │   ├── fixed_dwn_thermometer.sv       #   Feature >= threshold comparators
+│   │   ├── fixed_dwn_groupsum.sv          #   Popcount per class group, combinational
+│   │   ├── fixed_dwn_groupsum_pipelined.sv#   2-stage pipelined popcount
+│   │   └── fixed_dwn_flatten.sv           #   2D unpacked -> 1D packed wiring
+│   └── structural/                        # Xilinx LUT6-primitive RTL (synthesis-targeted)
+│       ├── sim_lut6.sv                    #   Behavioral stub for Verilator simulation
+│       ├── structural_dwn_lut_neuron.sv   #   1 neuron = 1 LUT6 site (DONT_TOUCH)
+│       ├── structural_dwn_lut_layer.sv    #   Parallel LUT6 neurons, combinational
+│       └── structural_dwn_lut_layer_clocked.sv  # Same + output register
+├── test/
+│   ├── Makefile                           # cocotb + Verilator runner
+│   ├── unit/                              # Per-module cocotb testbenches
+│   │   ├── dwn_lut_layer_common.py        #   Shared Config/Tx/SWModel/Scoreboard
+│   │   ├── fixed_dwn_groupsum_tb.py
+│   │   ├── fixed_dwn_lut_layer_tb.py      #   Unified: tests both fixed & structural
+│   │   ├── fixed_dwn_thermometer_tb.py
+│   │   ├── structural_dwn_lut_neuron_tb.py
+│   │   └── test_rtl_sim.py                #   Pytest runner for all unit tests
+│   └── integration/                       # End-to-end RTL verification
+│       ├── run_top_tb.py                  #   Runner: emits RTL, builds sim, launches cocotb
+│       └── top_tb.py                      #   cocotb testbench: AXI-Stream stimulus + scoring
+
+scripts/
+├── dwn/
+│   └── run_ckpt_to_rtl.py                 # Checkpoint -> RTL via MASE pipeline
+├── emit_dwn_rtl.py                        # Checkpoint -> RTL (standalone, with BLIF/pipeline options)
+└── synth_dwn.tcl                          # Vivado synthesis TCL script
+
+test/passes/graph/transforms/dwn/
+├── test_dwn_emit_rtl_equiv.py             # Parametrized emit pipeline equivalence
+├── test_emit_verilog_dwn.py               # Verilog syntax/parameter validation
+└── test_dwn_modules.py                    # Unit tests for DWN PyTorch modules
+```
+
+## Fixed vs Structural RTL
+
+Both variants implement identical functionality. The difference is **how** the LUT is expressed:
+
+| | Fixed (Behavioral) | Structural |
+|---|---|---|
+| **Implementation** | `assign out = LUT_CONTENTS[addr]` | Explicit `LUT6` primitive instantiation |
+| **Portability** | Any simulator/synthesizer | Xilinx 7-series / UltraScale only |
+| **Synthesis control** | Synthesizer decides mapping | `DONT_TOUCH` forces 1 neuron = 1 LUT6 |
+| **Use case** | Simulation, functional verification | Area-accurate synthesis, placement control |
+| **Simulation model** | Native Verilog | Requires `sim_lut6.sv` behavioral stub |
+
+The structural variant guarantees each DWN neuron maps to exactly one Xilinx LUT6 site,
+giving precise area counts. The fixed variant lets the synthesizer optimize freely.
+
+## RTL Module Summary
+
+| Module | Type | Latency | Purpose |
+|--------|------|---------|---------|
+| `fixed_dwn_lut_neuron` | Fixed, comb | 0 | `out = LUT_CONTENTS[addr]` |
+| `fixed_dwn_lut_layer` | Fixed, comb | 0 | OUTPUT_SIZE neurons in parallel |
+| `fixed_dwn_lut_layer_clocked` | Fixed, 1-clk | 1 | Output-registered LUT layer |
+| `fixed_dwn_thermometer` | Fixed, comb | 0 | `out[t] = (feature >= threshold[t])` |
+| `fixed_dwn_groupsum` | Fixed, comb | 0 | `$countones` per class group |
+| `fixed_dwn_groupsum_pipelined` | Fixed, 2-clk | 2 | 2-stage pipelined popcount |
+| `fixed_dwn_flatten` | Fixed, comb | 0 | 2D->1D wire reshape |
+| `structural_dwn_lut_neuron` | Structural, comb | 0 | 1 LUT6 per neuron |
+| `structural_dwn_lut_layer` | Structural, comb | 0 | Parallel LUT6 neurons |
+| `structural_dwn_lut_layer_clocked` | Structural, 1-clk | 1 | Output-registered LUT6 layer |
+| `sim_lut6` | Sim stub | 0 | Verilator-compatible LUT6 model |
+
+## Parameter Packing
+
+Trained LUT weights are packed into Verilog parameters as hex literals:
+
+- **INPUT_INDICES**: `(i*LUT_N + k) * INDEX_BITS` bits per entry, where `INDEX_BITS = ceil(log2(INPUT_SIZE))`
+- **LUT_CONTENTS**: `i * 2^LUT_N` bits per neuron truth table
+
+Example for INPUT_SIZE=4, OUTPUT_SIZE=2, LUT_N=2:
+```
+INDEX_BITS = 2
+INPUT_INDICES = 8'hE4   // neuron0 reads [0,1], neuron1 reads [2,3]
+LUT_CONTENTS  = 8'hAC   // neuron0 truth table = 4'b1100, neuron1 = 4'b1010
+```
+
+## Full Inference Pipeline
+
+```
+              ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌────────────┐
+ features ──> │ thermometer  │ ──> │  LUT layer 0 │ ──> │  LUT layer N │ ──> │  groupsum  │ ──> class scores
+  (int)       │ (>= thresh)  │     │  (parallel)  │     │  (parallel)  │     │ (popcount)  │     (int)
+              └─────────────┘     └──────────────┘     └──────────────┘     └────────────┘
+                 comb / 0 clk        comb or 1 clk        comb or 1 clk       comb or 2 clk
+```
+
+## Scripts
+
+### `scripts/dwn/run_ckpt_to_rtl.py`
+Emit RTL from a trained checkpoint via the MASE pass pipeline.
+```bash
+python scripts/dwn/run_ckpt_to_rtl.py --ckpt mase_output/dwn/best.pt --top-name dwn_top
+```
+
+### `scripts/emit_dwn_rtl.py`
+Standalone RTL emission with optional BLIF export, pipelined variant, and full-pipeline
+wrappers (thermometer + LUT + groupsum). Delegates to `mase_components.dwn_layers.emit`.
+```bash
+python scripts/emit_dwn_rtl.py --ckpt-name mnist_n2 --output-dir hw/mnist_n2
+python scripts/emit_dwn_rtl.py --ckpt-name baseline_n6 --full-pipeline --pipelined
+```
+
+### `scripts/synth_dwn.tcl`
+Vivado OOC synthesis. Run after RTL emission:
+```bash
+vivado -mode batch -source scripts/synth_dwn.tcl \
+  -tclargs <rtl_dir> <results_dir> xcvu9p-flgb2104-2-i full_pipeline_top_clocked 4.0
+```
+
+## RTL Files Generated by `emit_dwn_rtl()`
+
+`emit_dwn_rtl()` (in `src/mase_components/dwn_layers/emit.py`) generates ROM-based
+SystemVerilog files to `<output_dir>/hardware/rtl/`. ROM-based modules embed trained
+weights as `case`-statement functions rather than giant parameter literals, avoiding
+Verilator's 65536-bit width limit.
+
+The files produced depend on which flags are set:
+
+| File | Condition | Description |
+|------|-----------|-------------|
+| `fixed_dwn_lut_layer_{i}.sv` | always | Combinational ROM-based LUT layer, one per layer |
+| `fixed_dwn_lut_neuron.sv` | always | Single-neuron LUT primitive (copied from static RTL) |
+| `dwn_top.sv` | always | Top-level module wiring all LUT layers together |
+| `fixed_dwn_lut_layer_clocked_{i}.sv` | `emit_pipelined=True` | Output-registered LUT layer, one per layer |
+| `dwn_top_clocked.sv` | `emit_pipelined=True` | Clocked top: FF register between every LUT layer |
+| `fixed_dwn_thermometer.sv` | `full_pipeline=True` | ROM-based thermometer (overwrites static RTL) |
+| `fixed_dwn_thermometer_clocked.sv` | `full_pipeline=True` | Output-registered ROM thermometer |
+| `fixed_dwn_groupsum.sv` | `full_pipeline=True` | Copied from static RTL |
+| `fixed_dwn_groupsum_pipelined.sv` | `full_pipeline=True` | Copied from static RTL |
+| `full_pipeline_top.sv` | `full_pipeline=True` | Combinational full pipeline wrapper |
+| `full_pipeline_top_clocked.sv` | `full_pipeline=True` | Clocked full pipeline; latency = 1 + N LUT layers + 2 groupsum cycles |
+| `dwn_top_paper_scope.sv` | `full_pipeline=True` | LUT stack + pipelined GroupSum, no thermometer (matches Table 2 of Bacellar et al.) |
+
+### Top-level module interfaces
+
+All generated top-level modules use AXI-Stream–style handshake signals:
+
+```
+data_in_0        [W-1:0]   - packed input
+data_in_0_valid            - producer asserts valid
+data_in_0_ready            - consumer asserts ready
+data_out_0       [W-1:0]   - packed output
+data_out_0_valid
+data_out_0_ready
+clk, rst                   - present on all clocked modules
+```
+
+## Tests
+
+### Unit Tests
+
+Run all unit tests:
+```bash
+cd src/mase_components/dwn_layers/test
+python -m pytest unit/test_rtl_sim.py -v -s
+```
+
+| Test | DUT | What it checks |
+|------|-----|----------------|
+| `test_rtl_groupsum` | `fixed_dwn_groupsum` | Popcount matches PyTorch for basic, exhaustive, and handshake patterns |
+| `test_rtl_thermometer` | `fixed_dwn_thermometer` | Threshold comparisons match for boundary, random (seed=42), and handshake |
+| `test_rtl_lut_layer` | `fixed_dwn_lut_layer` | LUT output matches for basic, all-zeros, all-ones, exhaustive, and handshake |
+| `test_structural_rtl_lut_layer` | `structural_dwn_lut_layer` | Same tests as fixed, auto-detected via unified testbench |
+| `test_structural_rtl_lut_neuron` | `structural_dwn_lut_neuron` | Exhaustive truth-table sweep of all 2^LUT_N addresses |
+
+Prerequisites: `cocotb`, `cocotb-test`, Verilator, PyTorch.
+
+### Integration Tests
+
+The integration testbench is split into two files:
+
+- **`run_top_tb.py`** - Runner script. Loads the checkpoint, emits RTL via `emit_dwn_rtl()`,
+  builds the Verilator simulation, and launches cocotb with the correct environment.
+  Supports `--full` (include thermometer + groupsum), `--pipelined` (clocked variant),
+  and `--no-emit` (reuse previously generated RTL).
+- **`top_tb.py`** - cocotb testbench. Uses AXI-Stream source/sink to drive data through
+  the DUT and compare RTL outputs bit-for-bit against the PyTorch software model.
+  Runs four tests: `reset_test`, `backpressure_test`, `basic_test`, and
+  `continuous_test` (100 samples, with and without random backpressure).
+
+Run from the integration directory:
+```bash
+cd src/mase_components/dwn_layers/test/integration
+
+# Core-only (LUT layers), combinational
+python run_top_tb.py --model <checkpoint_name>
+
+# Full pipeline (thermometer + LUT + groupsum), pipelined
+python run_top_tb.py --model <checkpoint_name> --full --pipelined
+
+# Skip RTL emission (reuse previously generated RTL)
+python run_top_tb.py --model <checkpoint_name> --full --pipelined --no-emit
+```
+
+Environment variables:
+- `SIM` - simulator to use (default: `verilator`)
+- `MODEL_PATH` - set automatically by `run_top_tb.py`; path to the `.pt` checkpoint
+- `MODEL_MODE` - set automatically; `core` (LUT-only) or `full` (with thermometer + groupsum)
