@@ -55,13 +55,14 @@ module fixed_dwn_lut_layer_clocked #(
         if (rst) begin
             data_out_0       <= {OUTPUT_SIZE{1'b0}};
             data_out_0_valid <= 1'b0;
-        end else begin
-            data_out_0       <= comb_out;
-            data_out_0_valid <= data_in_0_valid;
-        end
+        end else if (data_in_0_ready) begin
+                if (data_in_0_valid) begin
+                    data_out_0 <= comb_out;
+                end
+                data_out_0_valid <= data_in_0_valid;
+            end
     end
 
-    // Simple pass-through ready (no backpressure buffer)
-    assign data_in_0_ready = data_out_0_ready;
+    assign data_in_0_ready = !data_out_0_valid || data_out_0_ready;
 
 endmodule

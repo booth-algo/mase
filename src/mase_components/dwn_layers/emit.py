@@ -190,13 +190,15 @@ module {module_name} #(
         if (rst) begin
             data_out_0       <= {{OUTPUT_SIZE{{1'b0}}}};
             data_out_0_valid <= 1'b0;
-        end else begin
-            data_out_0       <= comb_out;
+        end else if (data_in_0_ready) begin
+            if (data_in_0_valid) begin
+                data_out_0 <= comb_out;
+            end
             data_out_0_valid <= data_in_0_valid;
         end
     end
 
-    assign data_in_0_ready = data_out_0_ready;
+    assign data_in_0_ready = !data_out_0_valid || data_out_0_ready;
 
 endmodule
 """
