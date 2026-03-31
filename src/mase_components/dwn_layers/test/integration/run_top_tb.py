@@ -1,14 +1,10 @@
-import cocotb
 from cocotb.runner import get_runner
-from chop.nn.dwn.model import DWNModel
 from pathlib import Path
 import os
 import sysconfig
 import shutil
 import argparse
 from mase_components.dwn_layers.emit import emit_dwn_rtl
-
-import torch
 
 # TODO: maybe move the generated RTL to mase_output ?
 rtl_dir = Path(__file__).parent / 'gen_rtl'
@@ -28,18 +24,16 @@ def forward_env():
 
 def top_tb_runner(model_name, full, pipelined, no_emit):
     model_path = model_dir / f"{model_name}.pt"
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
     sim = os.getenv('SIM', 'verilator')
     runner = get_runner(sim) 
 
-    model = torch.load(model_path, map_location='cpu', weights_only=True)
-    cfg = model['model_config']
-    model_kwargs = {k: v for k, v in cfg.items() if k not in ("area_lambda", "lambda_reg")}
-    model = DWNModel(**model_kwargs)
     if not no_emit:
         if os.path.exists(rtl_dir):
             shutil.rmtree(rtl_dir)
         os.mkdir(rtl_dir)
-        emit_dwn_rtl(ckpt_path=model_path, output_dir=rtl_dir, full_pipeline=pipelined)
+        emit_dwn_rtl(ckpt_path=model_path, output_dir=rtl_dir, full_pipeline=full, emit_pipelined=pipelined)
     if full:
         hdl_toplevel = 'full_pipeline_top_clocked' if pipelined else 'full_pipeline_top'
     else:
@@ -62,6 +56,6 @@ if __name__ == "__main__":
     parser.add_argument('--full', action='store_true', help='Run the testbench with all RTL components (thermometer and groupsum)')
     parser.add_argument('--pipelined', action='store_true', help='Run the testbench with the pipelined RTL components')
     parser.add_argument('--no-emit', action='store_true', help='Do not emit RTL')
-    parser.add_argument('--model', help='Model checkpoint name')
+    parser.add_argument('--model', required=True, help='Model checkpoint name')
     args = parser.parse_args()
     top_tb_runner(args.model, args.full, args.pipelined, args.no_emit)
