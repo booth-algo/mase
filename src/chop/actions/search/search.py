@@ -83,11 +83,17 @@ def search(
     # construct the search space
     logger.info("Building search space...")
     search_space_cls = get_search_space_cls(search_space_config["name"])
+    dummy_input = None
+    if model_info is not None:
+        try:
+            dummy_input = get_dummy_input(model_info, data_module, task, device=accelerator)
+        except (AttributeError, RuntimeError):
+            pass
     search_space = search_space_cls(
         model=model,
         model_info=model_info,
         config=search_space_config,
-        dummy_input=get_dummy_input(model_info, data_module, task, device=accelerator),
+        dummy_input=dummy_input,
         accelerator=accelerator,
         data_module=data_module,
     )
