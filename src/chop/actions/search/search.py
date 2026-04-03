@@ -87,8 +87,8 @@ def search(
     if model_info is not None:
         try:
             dummy_input = get_dummy_input(model_info, data_module, task, device=accelerator)
-        except (AttributeError, RuntimeError):
-            pass
+        except (AttributeError, RuntimeError) as e:
+            logger.warning("Failed to generate dummy input for search space: %s", e)
     search_space = search_space_cls(
         model=model,
         model_info=model_info,
