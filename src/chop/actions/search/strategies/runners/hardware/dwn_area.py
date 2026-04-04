@@ -1,3 +1,5 @@
+from chop.nn.dwn.metrics import compute_area_luts
+
 from .base import HWRunnerBase
 
 
@@ -9,9 +11,7 @@ class RunnerDWNArea(HWRunnerBase):
 
     def __call__(self, data_module, model, sampled_config) -> dict[str, float]:
         if hasattr(model, "lut_layers"):
-            area = sum(
-                layer.output_size * (2 ** layer.n) for layer in model.lut_layers
-            )
+            area = compute_area_luts(model)
         else:
             cfg = sampled_config.get("model_config", sampled_config)
             area = sum(

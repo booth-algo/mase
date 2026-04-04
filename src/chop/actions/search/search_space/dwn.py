@@ -11,6 +11,8 @@ class DWNSearchSpace(SearchSpaceBase):
 
         self.n_values = setup["n_values"]
         self.hidden_sizes_options = setup["hidden_sizes"]
+        if not self.hidden_sizes_options:
+            raise ValueError("hidden_sizes must be non-empty in search space config")
         self.search_hidden_sizes = isinstance(self.hidden_sizes_options[0], list)
         self.num_layers = len(self.hidden_sizes_options)
 

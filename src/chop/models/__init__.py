@@ -24,6 +24,7 @@ from .vgg_cifar.vgg_cifar import *
 from .wideresnet.wideresnet import *
 from .wav2vec import *
 from .yolo import *
+from .ltcnn.ltcnn import *
 
 
 def get_model_info(name: str) -> MaseModelInfo:
