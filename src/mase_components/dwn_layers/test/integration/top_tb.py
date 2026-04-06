@@ -12,7 +12,32 @@ import math
 import random
 
 model_path = os.environ['MODEL_PATH']
-model_mode = os.environ['MODEL_MODE']
+
+
+class Scoreboard:
+    """Track pass/fail counts with structured diagnostics on mismatch."""
+    def __init__(self):
+        self.passed = 0
+        self.failed = 0
+
+    def check(self, input_tensor, output_bits, expected_bits, label=""):
+        tag = f"[SCOREBOARD]{' ' + label if label else ''}"
+        if np.array_equal(output_bits, expected_bits):
+            cocotb.log.info(f"{tag} PASS")
+            self.passed += 1
+        else:
+            self.failed += 1
+            diffs = np.where(output_bits != expected_bits)[0]
+            assert False, (
+                f"{tag} FAIL  mismatched bits at indices {diffs[:8].tolist()}"
+                f" (of {len(diffs)} total), "
+                f"got={output_bits[diffs[:4]].tolist()}, "
+                f"exp={expected_bits[diffs[:4]].tolist()}"
+            )
+
+    def summary(self):
+        cocotb.log.info(f"[SCOREBOARD] total: {self.passed} passed, {self.failed} failed")
+
 
 def bits_to_bytes(bits: np.ndarray) -> bytes:
     return np.packbits(np.asarray(bits, dtype=np.uint8).reshape(-1), bitorder="little").tobytes()
@@ -66,6 +91,9 @@ class TopEnv():
         self.core_model = DWNHardwareCore(self.full_model.lut_layers)
         self.core_model.eval()
         self.model_cfg = cfg
+        # Seed RNGs for reproducibility
+        torch.manual_seed(cocotb.RANDOM_SEED)
+        np.random.seed(cocotb.RANDOM_SEED % (2**32))
         self.input_bit_width = len(dut.data_in_0)
         self.output_bit_width = len(dut.data_out_0)
         self.clock = Clock(dut.clk, 10, units='ns')
@@ -108,26 +136,34 @@ def random_pause_gen(prob):
     while True:
         yield rng.random() < prob
 
-@cocotb.test()
+@cocotb.test(timeout_time=10, timeout_unit="ms")
 async def reset_test(dut):
     env = TopEnv(dut)
     await env.start()
     assert env.axis_sink.empty(), "Output should be empty after reset"
+    if hasattr(dut, 'data_out_0_valid'):
+        assert int(dut.data_out_0_valid.value) == 0, "data_out_0_valid should be deasserted after reset"
 
-@cocotb.test()
+@cocotb.test(timeout_time=10, timeout_unit="ms")
 async def backpressure_test(dut):
+    """Verify data integrity under sink backpressure."""
     env = TopEnv(dut)
     await env.start()
 
     input_tensor = env.get_random_input()
     sent_data = env.encode_input_data(input_tensor)
-    env.axis_sink.pause = True
-    env.axis_source.write_nowait(sent_data)
-    for _ in range(10):
-        await RisingEdge(env.dut.clk)
-    assert env.axis_source.empty()
+    expected_bits = env.expected_output_bits(input_tensor)
 
-@cocotb.test()
+    env.axis_sink.set_pause_generator(random_pause_gen(0.5))
+    await env.axis_source.write(sent_data)
+
+    output_bytes = await env.axis_sink.read()
+    output_bits = bytes_to_bits(output_bytes, env.output_bit_width)
+
+    sb = Scoreboard()
+    sb.check(input_tensor, output_bits, expected_bits, label="backpressure")
+
+@cocotb.test(timeout_time=10, timeout_unit="ms")
 async def basic_test(dut):
     env = TopEnv(dut)
     await env.start()
@@ -138,12 +174,46 @@ async def basic_test(dut):
 
     output_bytes = await env.axis_sink.read()
     output_bits = bytes_to_bits(output_bytes, env.output_bit_width)
-    output_tensor = torch.from_numpy(output_bits).unsqueeze(0)
     expected_bits = env.expected_output_bits(input_tensor)
-    expected_tensor = torch.from_numpy(expected_bits).unsqueeze(0)
 
-    assert torch.equal(output_tensor, expected_tensor)
+    sb = Scoreboard()
+    sb.check(input_tensor, output_bits, expected_bits, label="basic")
     assert env.axis_sink.empty(), "Output should be empty after reading"
+
+@cocotb.test(timeout_time=10, timeout_unit="ms")
+async def corner_case_test(dut):
+    """All-zeros and all-max inputs for boundary verification."""
+    env = TopEnv(dut)
+    await env.start()
+    sb = Scoreboard()
+
+    # All-zeros
+    if env.mode == 'core':
+        zeros = torch.zeros(1, env.input_bit_width, dtype=torch.uint8)
+    else:
+        zeros = torch.zeros(1, env.model_cfg["input_features"], dtype=torch.uint8)
+
+    sent_data = env.encode_input_data(zeros)
+    await env.axis_source.write(sent_data)
+    output_bytes = await env.axis_sink.read()
+    output_bits = bytes_to_bits(output_bytes, env.output_bit_width)
+    expected_bits = env.expected_output_bits(zeros)
+    sb.check(zeros, output_bits, expected_bits, label="all-zeros")
+
+    # All-max
+    if env.mode == 'core':
+        maxval = torch.ones(1, env.input_bit_width, dtype=torch.uint8)
+    else:
+        maxval = torch.full((1, env.model_cfg["input_features"]), 255, dtype=torch.uint8)
+
+    sent_data = env.encode_input_data(maxval)
+    await env.axis_source.write(sent_data)
+    output_bytes = await env.axis_sink.read()
+    output_bits = bytes_to_bits(output_bytes, env.output_bit_width)
+    expected_bits = env.expected_output_bits(maxval)
+    sb.check(maxval, output_bits, expected_bits, label="all-max")
+    sb.summary()
+
 
 async def continuous_test(dut, batch_size, backpressure):
     env = TopEnv(dut)
@@ -163,19 +233,19 @@ async def continuous_test(dut, batch_size, backpressure):
 
     await env.axis_source.write(b"".join(input_chunks))
     await env.axis_source.wait()
-    
+
+    sb = Scoreboard()
     for i, expected_bits in enumerate(expected_batch):
         output_frame = await env.axis_sink.recv()
         output_bits = bytes_to_bits(output_frame.tdata, env.output_bit_width)
-        output_tensor = torch.from_numpy(output_bits).unsqueeze(0)
-        expected_tensor = torch.from_numpy(expected_bits).unsqueeze(0)
-        assert torch.equal(output_tensor, expected_tensor), f"RTL output mismatch at batch {i}"
+        sb.check(batch_inputs[i].unsqueeze(0), output_bits, expected_bits, label=f"batch[{i}]")
+    sb.summary()
     assert env.axis_sink.empty(), "Output should be empty after reading"
 
-@cocotb.test()
+@cocotb.test(timeout_time=50, timeout_unit="ms")
 async def continuous_test_no_backpressure(dut):
-    await continuous_test(dut, 100, False)
+    await continuous_test(dut, 500, False)
 
-@cocotb.test()
+@cocotb.test(timeout_time=50, timeout_unit="ms")
 async def continuous_test_random_backpressure(dut):
-    await continuous_test(dut, 100, True)
+    await continuous_test(dut, 500, True)

@@ -1,0 +1,49 @@
+model = "dwn"
+dataset = "mnist"
+task = "cls"
+batch_size = 32
+accelerator = "auto"
+seed = 42
+
+[search.search_space]
+name = "dwn/architecture"
+
+[search.search_space.setup]
+n_values = [2, 4, 6, 8]
+hidden_sizes = [2000, 1000]
+num_bits = 3
+mapping_first = "learnable"
+mapping_rest = "random"
+tau = 3.333
+lambda_reg = 0.0
+max_thermo_samples = 50000
+normalize_input = false
+
+[search.strategy]
+name = "optuna"
+eval_mode = false
+
+[search.strategy.sw_runner.dwn_train]
+max_epochs = 10
+learning_rate = 0.01
+optimizer_name = "adam"
+area_lambda = 0.0
+lr_step = 7
+lr_gamma = 0.1
+eval_split = "val_dataloader"
+num_eval_samples = -1
+
+[search.strategy.hw_runner.dwn_area]
+
+[search.strategy.setup]
+n_jobs = 1
+n_trials = 16
+timeout = 86400
+sampler = "nsgaii"
+sum_scaled_metrics = false
+
+[search.strategy.metrics]
+accuracy.scale = 1.0
+accuracy.direction = "maximize"
+area_luts.scale = 1.0
+area_luts.direction = "minimize"
