@@ -34,7 +34,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from chop.nn.dwn import DWNModel
 
-from datasets import load_data
+from dwn_datasets import load_data
 from utils import compute_area_loss
 
 

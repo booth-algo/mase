@@ -27,8 +27,7 @@ class BatchedLUTNodes(nn.Module):
             (batch, num_nodes)
         """
         x = x.clamp(0.0, 1.0)
-        # Multilinear interpolation: weight each LUT entry by product of
-        # input-bit agreement across all input positions
+        # Multilinear interpolation of LUT entries
         x_exp = x.unsqueeze(-2)
         weights = x_exp * self.bit_patterns + (1.0 - x_exp) * (1.0 - self.bit_patterns)
         weights = weights.prod(dim=-1)

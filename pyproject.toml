@@ -31,6 +31,8 @@ dependencies = [
     "hyperopt @ git+https://github.com/hyperopt/hyperopt.git",
     "accelerate",
     "optuna",
+    "dill",
+    "joblib",
     "stable-baselines3[extra]",
     "h5py",
     "scikit-learn",

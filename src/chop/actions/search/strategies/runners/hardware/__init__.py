@@ -3,6 +3,7 @@ from .dummy import RunnerHWDummy
 from .resource import ResourceUsageRunner
 from .latency import LatencyRunner
 from .dwn_area import RunnerDWNArea
+from .ltcnn_area import RunnerLTCNNArea
 
 HW_RUNNERS = {
     "average_bitwidth": RunnerAvgBitwidth,
@@ -10,6 +11,7 @@ HW_RUNNERS = {
     "resource_usage": ResourceUsageRunner,
     "latency": LatencyRunner,
     "dwn_area": RunnerDWNArea,
+    "ltcnn_area": RunnerLTCNNArea,
 }
 
 

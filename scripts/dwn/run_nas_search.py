@@ -105,8 +105,9 @@ def main():
     )
 
     accel = config.get("accelerator", "auto")
-    if accel == "auto":
-        accel = "cuda" if torch.cuda.is_available() else "cpu"
+    if accel != "auto":
+        # parse_accelerator expects "gpu", "cpu", or "auto" — not "cuda"
+        accel = "gpu" if accel in ("cuda", "gpu") else accel
 
     from chop.actions.search.search import search
 

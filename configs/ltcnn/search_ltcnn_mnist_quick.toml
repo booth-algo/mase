@@ -1,0 +1,51 @@
+model = "ltcnn"
+dataset = "mnist"
+task = "cls"
+batch_size = 64
+accelerator = "gpu"
+seed = 42
+
+[search.search_space]
+name = "ltcnn/architecture"
+
+[search.search_space.setup]
+n_values = [2, 4]
+conv_channels_options = [[4, 8]]
+kernel_size_options = [3]
+ff_hidden_sizes_options = [[200, 100]]
+bit_depth_options = [2]
+Q_options = [0]
+
+encoding = "quantization"
+in_channels = 1
+num_classes = 10
+image_size = 28
+learnable_mapping = false
+
+[search.strategy]
+name = "optuna"
+eval_mode = false
+
+[search.strategy.sw_runner.ltcnn_train]
+max_epochs = 3
+learning_rate = 0.02
+optimizer_name = "adam"
+lr_gamma = 0.95
+patience = 0
+eval_split = "val_dataloader"
+num_eval_samples = 1000
+
+[search.strategy.hw_runner.ltcnn_area]
+
+[search.strategy.setup]
+n_jobs = 1
+n_trials = 2
+timeout = 3600
+sampler = "nsgaii"
+sum_scaled_metrics = false
+
+[search.strategy.metrics]
+accuracy.scale = 1.0
+accuracy.direction = "maximize"
+area_luts.scale = 1.0
+area_luts.direction = "minimize"

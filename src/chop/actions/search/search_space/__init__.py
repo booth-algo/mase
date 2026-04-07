@@ -4,6 +4,7 @@ from .quantization import (
 )
 from .systolic import SystolicMappingSearchSpace
 from .dwn import DWNSearchSpace
+from .ltcnn import LTCNNSearchSpace
 from .base import SearchSpaceBase
 
 from chop.tools.check_dependency import check_deps_tensorRT_pass
@@ -15,6 +16,7 @@ SEARCH_SPACE_MAP = {
     "module/manual_hf/quantize/llm_mixed_precision_ptq": ManualHFModuleSearchSpaceMixedPrecisionPTQ,
     "graph/hardware/systolic_mapping": SystolicMappingSearchSpace,
     "dwn/architecture": DWNSearchSpace,
+    "ltcnn/architecture": LTCNNSearchSpace,
 }
 
 if check_deps_tensorRT_pass(silent=True):

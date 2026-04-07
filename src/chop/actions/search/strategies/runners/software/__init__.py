@@ -1,11 +1,13 @@
 from .eval import RunnerBasicEval
 from .train import RunnerBasicTrain
 from .dwn_train import RunnerDWNTrain
+from .ltcnn_train import RunnerLTCNNTrain
 
 SW_RUNNERS = {
     "basic_evaluation": RunnerBasicEval,
     "basic_train": RunnerBasicTrain,
     "dwn_train": RunnerDWNTrain,
+    "ltcnn_train": RunnerLTCNNTrain,
 }
 
 

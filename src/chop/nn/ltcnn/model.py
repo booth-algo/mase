@@ -51,7 +51,7 @@ class LTCNN(nn.Module):
         )
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        flat_size = self._compute_flat_size(image_size, len(conv_channels), conv_channels[-1])
+        flat_size = self._infer_flat_size(image_size, encoded_channels)
         self.ff_layers, self.group_sum = self._build_classifier(
             flat_size, ff_hidden_sizes, n, num_classes, tau, learnable_mapping
         )
@@ -70,19 +70,18 @@ class LTCNN(nn.Module):
         ch_in = in_ch
         for ch_out in channels:
             layers.append(
-                LTConvLayer(ch_in, ch_out, kernel_size, n=n, stride=1, padding=1, Q=Q)
+                LTConvLayer(ch_in, ch_out, kernel_size, n=n, stride=1, padding=kernel_size // 2, Q=Q)
             )
             ch_in = ch_out
         return layers
 
-    @staticmethod
-    def _compute_flat_size(image_size: int, num_conv_layers: int, last_channels: int) -> int:
-        # Each conv layer preserves spatial dims (stride=1, padding=1),
-        # followed by MaxPool2d(2,2) which halves them.
-        spatial = image_size
-        for _ in range(num_conv_layers):
-            spatial = spatial // 2
-        return last_channels * spatial * spatial
+    def _infer_flat_size(self, image_size: int, encoded_channels: int) -> int:
+        """Run a dummy tensor through conv+pool to get the exact flat size."""
+        with torch.no_grad():
+            dummy = torch.zeros(1, encoded_channels, image_size, image_size)
+            for conv in self.conv_layers:
+                dummy = self.pool(conv(dummy))
+            return dummy.numel()
 
     @staticmethod
     def _build_classifier(

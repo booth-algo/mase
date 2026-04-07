@@ -6,12 +6,7 @@ from .tree_kernel import LUTTreeKernel
 
 
 class LTConvLayer(nn.Module):
-    """
-    Convolutional layer using LUT tree kernels instead of dot products.
-
-    Each output channel has its own LUTTreeKernel that slides over spatial
-    input patches. Optional channel subsampling (Q) reduces computation.
-    """
+    """Conv layer using LUT tree kernels. All output channels run in parallel."""
 
     def __init__(
         self,
@@ -31,7 +26,7 @@ class LTConvLayer(nn.Module):
         self.stride = stride
         self.padding = padding
 
-        effective_channels = Q if Q is not None else in_channels
+        effective_channels = min(Q, in_channels) if Q is not None else in_channels
         self.Q = Q
         self.n_leaf_inputs = kernel_size * kernel_size * effective_channels
 
@@ -48,36 +43,37 @@ class LTConvLayer(nn.Module):
         ])
 
     def _extract_patches(self, x: torch.Tensor) -> torch.Tensor:
-        """Extract sliding window patches. Returns (B, C, H_out, W_out, K, K)."""
+        """(B, C, H, W) -> (B, C, H_out, W_out, K, K)"""
         k, s, p = self.kernel_size, self.stride, self.padding
         if p > 0:
             x = F.pad(x, (p, p, p, p), value=0.0)
         return x.unfold(2, k, s).unfold(3, k, s)
-
-    def _flatten_patches(
-        self, patches: torch.Tensor, oc: int
-    ) -> torch.Tensor:
-        """Select channels for output `oc` and flatten patches to (B*H*W, leaf_inputs)."""
-        if self.channel_indices is not None:
-            patches = patches[:, self.channel_indices[oc]]
-
-        batch, _, h_out, w_out, kh, kw = patches.shape
-        # Rearrange to (B, H_out, W_out, C*K*K), then flatten spatial into batch dim
-        flat = patches.permute(0, 2, 3, 1, 4, 5).reshape(batch * h_out * w_out, -1)
-
-        if flat.shape[-1] < self.n_leaf_inputs:
-            flat = F.pad(flat, (0, self.n_leaf_inputs - flat.shape[-1]), value=0.0)
-        return flat
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch = x.shape[0]
         patches = self._extract_patches(x)
         _, _, h_out, w_out = patches.shape[:4]
 
-        outputs = []
-        for oc in range(self.out_channels):
-            flat = self._flatten_patches(patches, oc)
-            out = self.kernels[oc](flat).view(batch, h_out, w_out)
-            outputs.append(out)
+        if self.channel_indices is None:
+            # No Q subsampling: all channels share the same patch flatten
+            flat = patches.permute(0, 2, 3, 1, 4, 5).reshape(batch * h_out * w_out, -1)
+            if flat.shape[-1] < self.n_leaf_inputs:
+                flat = F.pad(flat, (0, self.n_leaf_inputs - flat.shape[-1]), value=0.0)
 
-        return torch.stack(outputs, dim=1)
+            # Run all kernels on the same flat input
+            outputs = []
+            for kernel in self.kernels:
+                outputs.append(kernel(flat))
+            out = torch.stack(outputs, dim=1)  # (B*H*W, out_channels)
+            return out.view(batch, h_out, w_out, self.out_channels).permute(0, 3, 1, 2).contiguous()
+        else:
+            # Q subsampling: each channel selects different input channels
+            outputs = []
+            for oc, kernel in enumerate(self.kernels):
+                sel = patches[:, self.channel_indices[oc]]
+                flat = sel.permute(0, 2, 3, 1, 4, 5).reshape(batch * h_out * w_out, -1)
+                if flat.shape[-1] < self.n_leaf_inputs:
+                    flat = F.pad(flat, (0, self.n_leaf_inputs - flat.shape[-1]), value=0.0)
+                outputs.append(kernel(flat))
+            out = torch.stack(outputs, dim=1)
+            return out.view(batch, h_out, w_out, self.out_channels).permute(0, 3, 1, 2).contiguous()
